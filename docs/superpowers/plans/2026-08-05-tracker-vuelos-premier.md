@@ -575,9 +575,10 @@ Expected: FAIL — `Cannot find module '../lib/ventanas'`
 ```js
 'use strict';
 
-const {
-  OFFSETS_VARIANTE, DIAS_VIAJE, SCORE, TEMPORADA_BAJA, RANGO_TRACKEABLE,
-} = require('./constantes');
+// El require va en UNA sola linea a proposito: scripts/build-snippets.js
+// elimina los require locales filtrando linea por linea, y un require
+// multilinea dejaria un 'const {' huerfano en el snippet generado.
+const { OFFSETS_VARIANTE, DIAS_VIAJE, SCORE, TEMPORADA_BAJA, RANGO_TRACKEABLE } = require('./constantes');
 
 const MS_POR_DIA = 86400000;
 
@@ -1023,6 +1024,22 @@ test('ningun snippet contiene require de modulos locales', () => {
       `${snippet.nombre} tiene un require local, no va a correr en n8n`);
   }
 });
+
+test('todos los snippets son sintacticamente validos', () => {
+  // Sin esta verificacion, un snippet mal concatenado —por ejemplo, por un
+  // require multilinea que dejo un 'const {' huerfano— recien fallaria al
+  // pegarlo en n8n, lejos de donde se puede diagnosticar.
+  //
+  // Se usa new Function y no vm.Script ni 'node --check': los wrappers
+  // terminan en 'return', que es ilegal en el top level de un script pero
+  // valido dentro de un cuerpo de funcion, que es exactamente como n8n
+  // ejecuta el codigo de un nodo Code.
+  for (const snippet of SNIPPETS) {
+    const contenido = construirSnippet(snippet.nombre);
+    assert.doesNotThrow(() => new Function(contenido),
+      `${snippet.nombre} genero JavaScript invalido`);
+  }
+});
 ```
 
 - [ ] **Step 2: Correr y verificar que falla**
@@ -1232,14 +1249,16 @@ Expected: cinco líneas `escrito ...`, y `n8n/code-snippets/` con 5 archivos.
 - [ ] **Step 5: Correr los tests y verificar que pasan**
 
 Run: `npm test`
-Expected: PASS, 57 tests acumulados
+Expected: PASS, 58 tests acumulados
 
-- [ ] **Step 6: Verificar manualmente que un snippet es válido**
+- [ ] **Step 6: Inspeccionar un snippet generado a ojo**
 
-Chequeo de sintaxis sin ejecutar. Un snippet mal concatenado rompería recién dentro de n8n.
+Abrir `n8n/code-snippets/wf2-calcular-ventanas.js` y verificar que:
+- arranca con el encabezado de "GENERADO AUTOMATICAMENTE"
+- contiene las funciones de `constantes.js` y `ventanas.js` completas, sin `const {` huérfanos ni `module.exports` residual
+- termina con el bloque de orquestación de n8n
 
-Run: `node --check n8n/code-snippets/wf2-calcular-ventanas.js`
-Expected: sin salida (sintaxis válida)
+No usar `node --check`: el archivo termina en `return`, ilegal en el top level de un script. El test del Step 5 ya valida la sintaxis con `new Function`, que es como n8n lo ejecuta.
 
 - [ ] **Step 7: Commit**
 
@@ -1641,7 +1660,7 @@ git commit -m "feat: workflow 3 de precios y alertas"
 
 ## Verificación final
 
-- [ ] `npm test` pasa completo, 57 tests.
+- [ ] `npm test` pasa completo, 58 tests.
 - [ ] `npm run build` no produce diferencias contra lo commiteado (el test de sync lo cubre).
 - [ ] Los tres workflows están activos en n8n.
 - [ ] La pestaña `precios` crece a diario sin filas con `ventana_id` o `ts` vacíos.
