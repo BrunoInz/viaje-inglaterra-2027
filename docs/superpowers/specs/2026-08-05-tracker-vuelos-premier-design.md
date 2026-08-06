@@ -241,7 +241,7 @@ Travelpayouts absorbe todo lo demás sin costo de cuota.
    importe **total del grupo**, no el unitario. Todo precio se divide por `pasajeros` antes
    de escribirse en `Sheets:precios`. La columna `precio_usd` siempre almacena valor **por
    persona**, y el `umbral_usd` de configuración se compara siempre contra ese valor
-   unitario. Sin esta normalización explícita el umbral de 1.400 nunca se dispararía.
+   unitario. Sin esta normalización explícita el umbral de 1.150 nunca se dispararía.
 3. **Consultar Travelpayouts** para las variantes que la cuota de SerpApi no cubre:
    - Calendario mensual completo del mes de cada ventana activa:
      ```
@@ -282,10 +282,28 @@ informa ambos totales y no elige por él.
 
 **Alerta inmediata** si se cumple cualquiera de las dos:
 
-- `precio < umbral` (valor inicial: USD 1.400 por persona, ida y vuelta)
+- `precio < umbral` (valor inicial: USD 1.150 por persona, ida y vuelta)
 - `precio ≤ 0.85 × media_móvil_14_días(ventana)` — esta es la que detecta promociones
   reales, porque es relativa a la línea base propia de cada ventana en vez de a un número
   fijo.
+
+**Calibración del umbral.** El valor de 1.150 no es arbitrario. Una consulta real a SerpApi
+del 2026-08-05 sobre EZE→LHR, ida 2027-02-12 y vuelta 2027-02-22, devolvió:
+
+| | Total por 2 personas | Por persona |
+|---|---|---|
+| Mejor oferta del momento | 2.779 (Iberia, vía Madrid) | 1.390 |
+| Más barato disponible | 2.515 | 1.257 |
+| Rango típico de la ruta | 2.350 – 2.950 | **1.175 – 1.475** |
+
+El umbral inicial previsto era 1.400, que cae **dentro** del rango típico: habría disparado
+alertas casi todos los días con precios perfectamente normales. Un sistema de alertas que
+suena siempre deja de leerse, y entonces no sirve para nada. 1.150 queda apenas por debajo
+del piso típico, así que solo suena cuando el precio es genuinamente bajo para esa ruta. La
+condición de caída relativa sigue cubriendo las promociones que no crucen ese número.
+
+Esta calibración debe revisarse cuando haya 3-4 semanas de histórico propio: una sola muestra
+fija el orden de magnitud, no la distribución.
 
 La segunda condición requiere al menos 7 registros previos de esa ventana para activarse.
 Antes de eso la media no es representativa y solo dispararía ruido.
@@ -357,7 +375,7 @@ alimentan medias móviles y alertas.
 ### Pestaña `config`
 | Clave | Valor inicial |
 |---|---|
-| `umbral_usd` | 1400 |
+| `umbral_usd` | 1150 |
 | `ventanas_activas` | 6 |
 | `dias_viaje` | 10 |
 | `pasajeros` | 2 |

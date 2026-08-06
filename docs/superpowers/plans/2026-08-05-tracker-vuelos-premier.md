@@ -17,7 +17,7 @@
 - **Precios siempre por persona**, en USD enteros redondeados. Toda función que reciba un total de grupo lo divide por `pasajeros` antes de devolverlo.
 - **Fechas en ISO 8601 UTC** (`2027-03-07T15:00:00Z`) para timestamps, `YYYY-MM-DD` para fechas de vuelo. Nunca formato local.
 - **Valores de configuración jamás hardcodeados** en `lib/`. Se reciben como parámetro. La pestaña `config` de Sheets es la única fuente.
-- Constantes fijadas por el spec, a copiar textualmente: `score` base 100, +20 por partido accesible, +30 por Champions, +10 por temporada baja (7 de enero a 15 de marzo). Ventana de viaje: 10 días. Offsets de variante: 2, 5 y 8 días antes del partido. Rango trackeable: hoy+60d a hoy+320d. Ventanas activas: 6. Umbral: USD 1.400. Factor de alerta relativa: 0.85. Mínimo de registros para media móvil: 7. Anti-spam: 48 horas. Costo de noche en Barcelona: USD 80.
+- Constantes fijadas por el spec, a copiar textualmente: `score` base 100, +20 por partido accesible, +30 por Champions, +10 por temporada baja (7 de enero a 15 de marzo). Ventana de viaje: 10 días. Offsets de variante: 2, 5 y 8 días antes del partido. Rango trackeable: hoy+60d a hoy+320d. Ventanas activas: 6. Umbral: USD 1.150. Factor de alerta relativa: 0.85. Mínimo de registros para media móvil: 7. Anti-spam: 48 horas. Costo de noche en Barcelona: USD 80.
 
 ---
 
@@ -1371,7 +1371,7 @@ ts | ventana_id | ruta | fuente | precio_usd | aerolinea | escalas | price_insig
 
 `config` — dos columnas, `clave` y `valor`, con estas filas:
 ```
-umbral_usd          | 1400
+umbral_usd          | 1150
 ventanas_activas    | 6
 dias_viaje          | 10
 pasajeros           | 2
@@ -1394,7 +1394,7 @@ En la instancia de n8n (ver la memoria `n8n_credentials`), crear:
 - [ ] **Step 7: Verificar de punta a punta**
 
 Crear un workflow descartable en n8n con un solo nodo Google Sheets que lea la pestaña `config`. Ejecutarlo.
-Expected: 9 filas, con `umbral_usd = 1400`.
+Expected: 9 filas, con `umbral_usd = 1150`.
 
 Borrar el workflow descartable.
 
@@ -1675,7 +1675,7 @@ Expected: llega alerta de Telegram por cada ventana con precio válido, con moti
 Ejecutar una segunda vez sin cambiar nada.
 Expected: **no llega ninguna alerta nueva** — el anti-spam de 48 horas la bloquea. Si llegan de nuevo, el nodo `Marcar alerta` no está escribiendo `ultima_alerta_ts`.
 
-Devolver `umbral_usd` a `1400`.
+Devolver `umbral_usd` a `1150`.
 
 - [ ] **Step 6: Verificar el digest**
 
