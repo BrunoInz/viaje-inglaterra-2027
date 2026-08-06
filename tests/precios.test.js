@@ -50,3 +50,11 @@ test('precioViaBarcelona devuelve null si falta cualquier tramo', () => {
   assert.strictEqual(precioViaBarcelona({ ezeBcn: 469, bcnEze: null, bcnLon: 120, costoNocheBcn: 80 }), null);
   assert.strictEqual(precioViaBarcelona({ ezeBcn: 469, bcnEze: 500, bcnLon: null, costoNocheBcn: 80 }), null);
 });
+
+test('precioViaBarcelona devuelve null si costoNocheBcn no es numerico', () => {
+  assert.strictEqual(precioViaBarcelona({ ezeBcn: 469, bcnEze: 500, bcnLon: 120, costoNocheBcn: 'abc' }), null);
+});
+
+test('precioViaBarcelona trata costoNocheBcn ausente como cero', () => {
+  assert.strictEqual(precioViaBarcelona({ ezeBcn: 469, bcnEze: 500, bcnLon: 120 }), 1089);
+});
