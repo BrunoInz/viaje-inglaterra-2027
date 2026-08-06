@@ -1352,7 +1352,9 @@ Expected: JSON con `result[0].message.chat.id`. Ese número es el `telegram_chat
 
 - [ ] **Step 5: Crear la planilla**
 
-Crear un Google Sheet nuevo llamado `tracker-vuelos-inglaterra-2027` con **cuatro pestañas**, con estos encabezados en la fila 1 exactamente en este orden:
+Crear un Google Sheet nuevo llamado `tracker-vuelos-inglaterra-2027`, abrir `Extensiones → Apps Script`, pegar `scripts/setup-sheet.gs` y ejecutar la función `setupPlanilla`. Deja las 4 pestañas creadas con sus encabezados y la `config` poblada, y muestra el ID de la planilla al terminar.
+
+Si se hace a mano, son **cuatro pestañas** con estos encabezados en la fila 1 exactamente en este orden:
 
 `fixtures`:
 ```
@@ -1413,13 +1415,36 @@ Copiar el ID del Sheet desde la URL (`docs.google.com/spreadsheets/d/<ID>/edit`)
 - Consumes: `n8n/code-snippets/wf1-normalizar-fixtures.js` y `wf1-detectar-reprogramaciones.js` de la Task 6; las credenciales y la planilla de la Task 7.
 - Produces: la pestaña `fixtures` poblada. La Task 9 la lee.
 
-- [ ] **Step 1: Construir el workflow en n8n**
+- [ ] **Step 1: Importar el workflow en n8n**
+
+En vez de armar los 13 nodos a mano, el JSON se genera desde el repo:
+
+```bash
+npm run build          # regenera snippets + n8n/workflows/wf1-fixture-sync.json
+```
+
+En n8n: menú `...` → *Import from File* → elegir `n8n/workflows/wf1-fixture-sync.json`.
+Después, en la UI:
+
+- Reemplazar `REEMPLAZAR_CON_GOOGLE_SHEET_ID` en los tres nodos de Google Sheets por el ID real de la planilla (Task 7, Step 8).
+- Enganchar la credencial de Google Sheets en esos tres nodos.
+- Enganchar en `Traer PL` y `Traer CL` una credencial **Header Auth** con nombre `X-Auth-Token` y el token de football-data.org como valor.
+- Enganchar la credencial de Telegram en `Avisar reprogramacion`.
+
+Nada de eso viaja en el JSON: el test `el JSON no contiene credenciales` falla si alguna se cuela al repo.
+
+**Tres desviaciones respecto de la versión original de este plan**, encontradas al construir el JSON. El generador `scripts/build-wf1.js` las documenta en el `notes` de cada nodo:
+
+1. **football-data devuelve un único item con un array `matches`**, no un item por partido. Los nodos `Marcar competencia` expanden ese array con `flatMap`. Sin eso, `Normalizar fixtures` recibía el objeto contenedor y producía una sola fila basura.
+2. **La pestaña `config` es clave/valor**, o sea una fila por parámetro, pero los snippets hacen `$('Leer config').first().json.umbral_usd`. Se agrega un nodo Code que aplana esas filas en un solo objeto. Ese nodo se llama `Leer config` y el de Google Sheets pasa a `Leer config raw`, para que los snippets funcionen sin tocarlos. **Esto aplica igual a las Tasks 9 y 10.**
+3. **`Leer fixtures previos` lleva `alwaysOutputData`.** En la primera corrida la pestaña está vacía y sin esa opción n8n corta la ejecución ahí, sin llegar nunca a poblarla.
 
 Nodos, en orden:
 
-1. **Schedule Trigger** — semanal, domingos 08:00, timezone `America/Argentina/Buenos_Aires`.
-2. **Google Sheets** (`Leer config`) — lee la pestaña `config`.
-3. **Google Sheets** (`Leer fixtures previos`) — lee la pestaña `fixtures`. Si está vacía devuelve cero items, y eso es válido en la primera corrida.
+1. **Schedule Trigger** (`Domingos 08:00`) — semanal, domingos 08:00, timezone `America/Argentina/Buenos_Aires` (va en los settings del workflow).
+2. **Google Sheets** (`Leer config raw`) — lee la pestaña `config`.
+2b. **Code** (`Leer config`) — aplana las filas clave/valor en un único objeto.
+3. **Google Sheets** (`Leer fixtures previos`) — lee la pestaña `fixtures`, con *Always Output Data* activado.
 4. **HTTP Request** (`Traer PL`) — `GET https://api.football-data.org/v4/competitions/PL/matches`, header `X-Auth-Token`. En **Settings**, activar *Retry On Fail*: 3 intentos, 5000 ms entre reintentos.
 5. **HTTP Request** (`Traer CL`) — `GET https://api.football-data.org/v4/competitions/CL/matches`, mismo header y mismo retry.
 
@@ -1427,12 +1452,16 @@ Nodos, en orden:
 
    El free tier de football-data.org cubre 12 competiciones incluyendo Champions, y el límite es de 10 requests por minuto: dos llamadas semanales están holgadamente dentro.
 
-6. **Code** (`Marcar competencia`) — n8n pierde el origen al fusionar ramas, así que hay que etiquetar antes de unir. Modo *Run Once for All Items*, un nodo por cada rama:
+6. **Code** (`Marcar competencia PL` / `Marcar competencia CL`) — n8n pierde el origen al fusionar ramas, así que hay que etiquetar antes de unir. Además hay que expandir el array `matches` que devuelve la API. Modo *Run Once for All Items*, un nodo por cada rama:
 
 ```js
 // En la rama de PL usar 'PL'; en la de CL, 'CL'.
 const competencia = 'PL';
-return $input.all().map((item) => ({ json: { ...item.json, _competencia: competencia } }));
+
+return $input.all().flatMap((item) => {
+  const partidos = Array.isArray(item.json.matches) ? item.json.matches : [item.json];
+  return partidos.map((partido) => ({ json: { ...partido, _competencia: competencia } }));
+});
 ```
 
 7. **Merge** (`Unir competencias`) — modo *Append*. Entrada 1 desde la rama PL, entrada 2 desde la rama CL.
@@ -1475,14 +1504,17 @@ Expected: solo aparecen partidos donde `tla_local = MCI`. Si aparecen partidos d
 Editar a mano en la planilla la `fecha_utc` de un partido donde `tla_local = MCI`, poniéndole una fecha distinta. Volver a ejecutar el workflow.
 Expected: llega un mensaje de Telegram con el aviso de reprogramación, y la fila vuelve a la fecha real.
 
-- [ ] **Step 4: Activar el workflow y exportarlo**
+- [ ] **Step 4: Activar el workflow**
 
-Activar el toggle. Después, menú `...` → *Download*, y guardar el JSON en `n8n/workflows/wf1-fixture-sync.json`.
+Activar el toggle.
+
+**No sobrescribir `n8n/workflows/wf1-fixture-sync.json` con el export de n8n.** Ese archivo lo genera `scripts/build-wf1.js` y `tests/wf1.test.js` verifica que estén sincronizados; un export traería IDs de credenciales y el Sheet ID reales, que no van al repo. Si hace falta cambiar el workflow, se cambia el generador y se reimporta.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add n8n/workflows/wf1-fixture-sync.json
+npm test
+git add n8n/workflows/wf1-fixture-sync.json scripts/build-wf1.js tests/wf1.test.js
 git commit -m "feat: workflow 1 de sincronizacion de fixtures"
 ```
 

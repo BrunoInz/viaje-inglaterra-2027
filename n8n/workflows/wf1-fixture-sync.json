@@ -1,0 +1,481 @@
+{
+  "name": "WF1 - Fixture Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                0
+              ],
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "trigger-semanal",
+      "name": "Domingos 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_CON_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "config",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "sheets-config-raw",
+      "name": "Leer config raw",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// La pestana config es clave/valor: una fila por parametro. Los snippets\n// esperan un unico objeto, asi que se aplana aca.\nconst config = {};\n\nfor (const item of $input.all()) {\n  if (item.json.clave) config[item.json.clave] = item.json.valor;\n}\n\nreturn [{ json: config }];"
+      },
+      "id": "code-aplanar-config",
+      "name": "Leer config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "notes": "Se llama \"Leer config\" a proposito: es el nombre que referencian los snippets."
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_CON_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "fixtures",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "sheets-fixtures-previos",
+      "name": "Leer fixtures previos",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        440,
+        300
+      ],
+      "alwaysOutputData": true,
+      "notes": "alwaysOutputData: en la primera corrida la pestana esta vacia y sin esto la ejecucion corta aca."
+    },
+    {
+      "parameters": {
+        "url": "https://api.football-data.org/v4/competitions/PL/matches",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "http-pl",
+      "name": "Traer PL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        180
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Credencial Header Auth: nombre X-Auth-Token, valor el token de football-data.org."
+    },
+    {
+      "parameters": {
+        "url": "https://api.football-data.org/v4/competitions/CL/matches",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "http-cl",
+      "name": "Traer CL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        420
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Credencial Header Auth: nombre X-Auth-Token, valor el token de football-data.org."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const competencia = 'PL';\n\nreturn $input.all().flatMap((item) => {\n  const partidos = Array.isArray(item.json.matches) ? item.json.matches : [item.json];\n  return partidos.map((partido) => ({ json: { ...partido, _competencia: competencia } }));\n});"
+      },
+      "id": "code-marcar-pl",
+      "name": "Marcar competencia PL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const competencia = 'CL';\n\nreturn $input.all().flatMap((item) => {\n  const partidos = Array.isArray(item.json.matches) ? item.json.matches : [item.json];\n  return partidos.map((partido) => ({ json: { ...partido, _competencia: competencia } }));\n});"
+      },
+      "id": "code-marcar-cl",
+      "name": "Marcar competencia CL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "numberInputs": 2
+      },
+      "id": "merge-competencias",
+      "name": "Unir competencias",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-city-en-cl",
+              "leftValue": "={{ $json._competencia === 'PL' || ($json.homeTeam && $json.homeTeam.tla === 'MCI') }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "filter-city-cl",
+      "name": "Solo City en CL",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        300
+      ],
+      "notes": "Champions trae cientos de partidos irrelevantes. Se queda solo con los de City de local."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// GENERADO AUTOMATICAMENTE por scripts/build-snippets.js\n// No editar a mano: modificar lib/ y correr 'npm run build'.\n\n// Ciudad de cada club, para el filtro de accesibilidad geografica.\n// Solo se listan los clubes que el spec considera relevantes.\nconst CIUDAD_POR_TLA = {\n  MCI: 'Manchester',\n  MUN: 'Manchester',\n  LIV: 'Liverpool',\n  EVE: 'Liverpool',\n  FUL: 'London',\n  BRE: 'London',\n  WHU: 'London',\n  CRY: 'London',\n  ARS: 'London',\n  CHE: 'London',\n  TOT: 'London',\n  WOL: 'Wolverhampton',\n  AVL: 'Birmingham',\n  BUR: 'Burnley',\n  BOU: 'Bournemouth',\n};\n\nconst OFFSETS_VARIANTE = [2, 5, 8];\nconst DIAS_VIAJE = 10;\n\nconst SCORE = {\n  BASE: 100,\n  POR_ACCESIBLE: 20,\n  CHAMPIONS: 30,\n  TEMPORADA_BAJA: 10,\n};\n\n// Temporada baja de vuelos segun el spec: 7 de enero a 15 de marzo.\nconst TEMPORADA_BAJA = {\n  DESDE_MMDD: '01-07',\n  HASTA_MMDD: '03-15',\n};\n\nconst RANGO_TRACKEABLE = {\n  PISO_DIAS: 60,\n  TECHO_DIAS: 320,\n};\n\nconst ALERTA = {\n  FACTOR: 0.85,\n  MIN_REGISTROS: 7,\n  ANTISPAM_HORAS: 48,\n};\n\nfunction normalizarPartido(raw, competencia) {\n  const tla = (raw.homeTeam && raw.homeTeam.tla) || '';\n  return {\n    match_id: raw.id,\n    fecha_utc: raw.utcDate,\n    local: (raw.homeTeam && raw.homeTeam.name) || '',\n    visitante: (raw.awayTeam && raw.awayTeam.name) || '',\n    tla_local: tla,\n    estadio: raw.venue || '',\n    ciudad: CIUDAD_POR_TLA[tla] || '',\n    competencia,\n    estado: raw.status || '',\n  };\n}\n\n// Google Sheets devuelve numeros como string al leerlos. Comparar sin\n// normalizar haria que todos los partidos parezcan nuevos en cada corrida.\nfunction detectarReprogramaciones(previos, actuales, tlaObjetivo) {\n  const indice = new Map(previos.map((p) => [String(p.match_id), p]));\n  const cambios = [];\n\n  for (const actual of actuales) {\n    if (actual.tla_local !== tlaObjetivo) continue;\n    const previo = indice.get(String(actual.match_id));\n    if (!previo) continue; // partido nuevo, no es una reprogramacion\n    if (previo.fecha_utc === actual.fecha_utc) continue;\n\n    cambios.push({\n      match_id: actual.match_id,\n      visitante: actual.visitante,\n      fecha_anterior: previo.fecha_utc,\n      fecha_nueva: actual.fecha_utc,\n    });\n  }\n\n  return cambios;\n}\n\n// --- orquestacion n8n ---\n// La competencia viaja en cada item: WF1 fusiona la rama de Premier con la de\n// Champions, y despues del Merge ya no se puede saber de que rama vino cada uno.\nreturn $input.all().map((item) => ({\n  json: normalizarPartido(item.json, item.json._competencia || 'PL'),\n}));\n"
+      },
+      "id": "code-normalizar",
+      "name": "Normalizar fixtures",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// GENERADO AUTOMATICAMENTE por scripts/build-snippets.js\n// No editar a mano: modificar lib/ y correr 'npm run build'.\n\n// Ciudad de cada club, para el filtro de accesibilidad geografica.\n// Solo se listan los clubes que el spec considera relevantes.\nconst CIUDAD_POR_TLA = {\n  MCI: 'Manchester',\n  MUN: 'Manchester',\n  LIV: 'Liverpool',\n  EVE: 'Liverpool',\n  FUL: 'London',\n  BRE: 'London',\n  WHU: 'London',\n  CRY: 'London',\n  ARS: 'London',\n  CHE: 'London',\n  TOT: 'London',\n  WOL: 'Wolverhampton',\n  AVL: 'Birmingham',\n  BUR: 'Burnley',\n  BOU: 'Bournemouth',\n};\n\nconst OFFSETS_VARIANTE = [2, 5, 8];\nconst DIAS_VIAJE = 10;\n\nconst SCORE = {\n  BASE: 100,\n  POR_ACCESIBLE: 20,\n  CHAMPIONS: 30,\n  TEMPORADA_BAJA: 10,\n};\n\n// Temporada baja de vuelos segun el spec: 7 de enero a 15 de marzo.\nconst TEMPORADA_BAJA = {\n  DESDE_MMDD: '01-07',\n  HASTA_MMDD: '03-15',\n};\n\nconst RANGO_TRACKEABLE = {\n  PISO_DIAS: 60,\n  TECHO_DIAS: 320,\n};\n\nconst ALERTA = {\n  FACTOR: 0.85,\n  MIN_REGISTROS: 7,\n  ANTISPAM_HORAS: 48,\n};\n\nfunction normalizarPartido(raw, competencia) {\n  const tla = (raw.homeTeam && raw.homeTeam.tla) || '';\n  return {\n    match_id: raw.id,\n    fecha_utc: raw.utcDate,\n    local: (raw.homeTeam && raw.homeTeam.name) || '',\n    visitante: (raw.awayTeam && raw.awayTeam.name) || '',\n    tla_local: tla,\n    estadio: raw.venue || '',\n    ciudad: CIUDAD_POR_TLA[tla] || '',\n    competencia,\n    estado: raw.status || '',\n  };\n}\n\n// Google Sheets devuelve numeros como string al leerlos. Comparar sin\n// normalizar haria que todos los partidos parezcan nuevos en cada corrida.\nfunction detectarReprogramaciones(previos, actuales, tlaObjetivo) {\n  const indice = new Map(previos.map((p) => [String(p.match_id), p]));\n  const cambios = [];\n\n  for (const actual of actuales) {\n    if (actual.tla_local !== tlaObjetivo) continue;\n    const previo = indice.get(String(actual.match_id));\n    if (!previo) continue; // partido nuevo, no es una reprogramacion\n    if (previo.fecha_utc === actual.fecha_utc) continue;\n\n    cambios.push({\n      match_id: actual.match_id,\n      visitante: actual.visitante,\n      fecha_anterior: previo.fecha_utc,\n      fecha_nueva: actual.fecha_utc,\n    });\n  }\n\n  return cambios;\n}\n\n// --- orquestacion n8n ---\nconst previos = $('Leer fixtures previos').all().map((i) => i.json);\nconst actuales = $('Normalizar fixtures').all().map((i) => i.json);\nconst cambios = detectarReprogramaciones(previos, actuales, 'MCI');\nreturn cambios.map((c) => ({ json: c }));\n"
+      },
+      "id": "code-reprogramaciones",
+      "name": "Detectar reprogramaciones",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-hay-cambio",
+              "leftValue": "={{ $json.match_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "if-hay-reprogramacion",
+      "name": "Hay reprogramacion",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1980,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Leer config').first().json.telegram_chat_id }}",
+        "text": "=⚠️ PARTIDO REPROGRAMADO\n\nCity vs {{ $json.visitante }}\nAntes:  {{ $json.fecha_anterior }}\nAhora:  {{ $json.fecha_nueva }}\n\nRevisá si te rompe alguna ventana de viaje.",
+        "additionalFields": {}
+      },
+      "id": "telegram-aviso",
+      "name": "Avisar reprogramacion",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2200,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_CON_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "fixtures",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": [
+            "match_id"
+          ],
+          "value": {},
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "sheets-guardar",
+      "name": "Guardar fixtures",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1760,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "Domingos 08:00": {
+      "main": [
+        [
+          {
+            "node": "Leer config raw",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer config raw": {
+      "main": [
+        [
+          {
+            "node": "Leer config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer config": {
+      "main": [
+        [
+          {
+            "node": "Leer fixtures previos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer fixtures previos": {
+      "main": [
+        [
+          {
+            "node": "Traer PL",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Traer CL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Traer PL": {
+      "main": [
+        [
+          {
+            "node": "Marcar competencia PL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Traer CL": {
+      "main": [
+        [
+          {
+            "node": "Marcar competencia CL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar competencia PL": {
+      "main": [
+        [
+          {
+            "node": "Unir competencias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar competencia CL": {
+      "main": [
+        [
+          {
+            "node": "Unir competencias",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Unir competencias": {
+      "main": [
+        [
+          {
+            "node": "Solo City en CL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Solo City en CL": {
+      "main": [
+        [
+          {
+            "node": "Normalizar fixtures",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar fixtures": {
+      "main": [
+        [
+          {
+            "node": "Guardar fixtures",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Detectar reprogramaciones",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detectar reprogramaciones": {
+      "main": [
+        [
+          {
+            "node": "Hay reprogramacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hay reprogramacion": {
+      "main": [
+        [
+          {
+            "node": "Avisar reprogramacion",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Argentina/Buenos_Aires",
+    "saveManualExecutions": true
+  },
+  "pinData": {}
+}
