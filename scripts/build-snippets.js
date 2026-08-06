@@ -162,7 +162,9 @@ function extraerCuerpo(nombreModulo) {
   return fuente
     .split('\n')
     .filter((linea) => !/^'use strict';/.test(linea))
-    .filter((linea) => !/require\(['"]\.\//.test(linea))
+    // IMPORTANTE: este patron debe coincidir exactamente con el de tests/sync.test.js
+    // para que ambos acuerden en que es un require local (./ o ../).
+    .filter((linea) => !/require\(['"]\.\.?\//.test(linea))
     .join('\n')
     .replace(/module\.exports\s*=\s*\{[\s\S]*?\};?\s*$/m, '')
     .trim();
