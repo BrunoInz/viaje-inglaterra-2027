@@ -746,6 +746,17 @@ test('precioViaBarcelona devuelve null si falta cualquier tramo', () => {
   assert.strictEqual(precioViaBarcelona({ ezeBcn: 469, bcnEze: null, bcnLon: 120, costoNocheBcn: 80 }), null);
   assert.strictEqual(precioViaBarcelona({ ezeBcn: 469, bcnEze: 500, bcnLon: null, costoNocheBcn: 80 }), null);
 });
+
+test('precioViaBarcelona devuelve null si costoNocheBcn no es numerico', () => {
+  // En produccion este valor llega como Number(config.costo_noche_bcn) leyendo
+  // una celda de Sheets. Una celda con texto da NaN, y un NaN escrito al
+  // historico se propaga por la media movil sin que nada lo delate.
+  assert.strictEqual(precioViaBarcelona({ ezeBcn: 469, bcnEze: 500, bcnLon: 120, costoNocheBcn: 'abc' }), null);
+});
+
+test('precioViaBarcelona trata costoNocheBcn ausente como cero', () => {
+  assert.strictEqual(precioViaBarcelona({ ezeBcn: 469, bcnEze: 500, bcnLon: 120 }), 1089);
+});
 ```
 
 - [ ] **Step 2: Correr y verificar que falla**
@@ -779,9 +790,21 @@ function precioDelDia(dayPrices, fechaYMD) {
   return encontrado ? encontrado.price : null;
 }
 
+function esNumeroValido(valor) {
+  return typeof valor === 'number' && Number.isFinite(valor);
+}
+
 function precioViaBarcelona({ ezeBcn, bcnEze, bcnLon, costoNocheBcn }) {
-  const tramos = [ezeBcn, bcnEze, bcnLon];
-  if (tramos.some((t) => typeof t !== 'number' || !Number.isFinite(t))) return null;
+  if (![ezeBcn, bcnEze, bcnLon].every(esNumeroValido)) return null;
+
+  // costoNocheBcn puede faltar y vale 0 en ese caso, pero cualquier otro valor
+  // no numerico invalida el resultado: sumarlo daria NaN, y un NaN en el
+  // historico se propaga por la media movil sin dejar rastro. Un null, en
+  // cambio, lo descarta el filtro de estado aguas abajo.
+  if (costoNocheBcn !== null && costoNocheBcn !== undefined && !esNumeroValido(costoNocheBcn)) {
+    return null;
+  }
+
   return ezeBcn + bcnEze + bcnLon + (costoNocheBcn || 0);
 }
 
@@ -791,7 +814,7 @@ module.exports = { normalizarPrecioGrupo, tieneInventario, precioDelDia, precioV
 - [ ] **Step 4: Correr y verificar que pasa**
 
 Run: `npm test`
-Expected: PASS, 39 tests acumulados
+Expected: PASS, 41 tests acumulados
 
 - [ ] **Step 5: Commit**
 
@@ -971,7 +994,7 @@ module.exports = { mediaMovil, debeAlertar };
 - [ ] **Step 4: Correr y verificar que pasa**
 
 Run: `npm test`
-Expected: PASS, 51 tests acumulados
+Expected: PASS, 53 tests acumulados
 
 - [ ] **Step 5: Commit**
 
@@ -1249,7 +1272,7 @@ Expected: cinco líneas `escrito ...`, y `n8n/code-snippets/` con 5 archivos.
 - [ ] **Step 5: Correr los tests y verificar que pasan**
 
 Run: `npm test`
-Expected: PASS, 58 tests acumulados
+Expected: PASS, 60 tests acumulados
 
 - [ ] **Step 6: Inspeccionar un snippet generado a ojo**
 
@@ -1660,7 +1683,7 @@ git commit -m "feat: workflow 3 de precios y alertas"
 
 ## Verificación final
 
-- [ ] `npm test` pasa completo, 58 tests.
+- [ ] `npm test` pasa completo, 60 tests.
 - [ ] `npm run build` no produce diferencias contra lo commiteado (el test de sync lo cubre).
 - [ ] Los tres workflows están activos en n8n.
 - [ ] La pestaña `precios` crece a diario sin filas con `ventana_id` o `ts` vacíos.
