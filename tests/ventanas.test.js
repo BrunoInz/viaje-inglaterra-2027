@@ -128,3 +128,35 @@ test('el ventana_id es estable entre corridas', () => {
   const idsB = b.map((x) => x.ventana_id).sort();
   assert.deepStrictEqual(idsA, idsB);
 });
+
+test('generarVentanas no muta los arrays de entrada', () => {
+  const city = [partidoCity(1, '2027-02-20T15:00:00Z')];
+  const extra = { match_id: 2, fecha_utc: '2027-02-21T15:00:00Z', tla_local: 'FUL',
+                  ciudad: 'London', competencia: 'PL', visitante: 'Z' };
+  const todosLosPartidos = [...city, extra];
+
+  // Tomar snapshot profundo antes de la llamada
+  const citySnapshot = JSON.parse(JSON.stringify(city));
+  const todosSnapshot = JSON.parse(JSON.stringify(todosLosPartidos));
+
+  generarVentanas(city, todosLosPartidos, CONFIG, HOY);
+
+  // Verificar que no hubo mutación
+  assert.deepStrictEqual(city, citySnapshot);
+  assert.deepStrictEqual(todosLosPartidos, todosSnapshot);
+});
+
+test('toda ventana generada tiene ultima_alerta_ts === null', () => {
+  const city = [
+    partidoCity(1, '2027-02-20T15:00:00Z'),
+    partidoCity(2, '2027-03-06T15:00:00Z'),
+    partidoCity(3, '2027-04-10T15:00:00Z'),
+  ];
+  const extra = { match_id: 10, fecha_utc: '2027-02-21T15:00:00Z', tla_local: 'FUL',
+                  ciudad: 'London', competencia: 'PL', visitante: 'Z' };
+  const v = generarVentanas(city, [...city, extra], CONFIG, HOY);
+
+  for (const ventana of v) {
+    assert.strictEqual(ventana.ultima_alerta_ts, null);
+  }
+});
