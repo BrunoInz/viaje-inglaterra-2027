@@ -84,7 +84,7 @@ git branch -M main
   "private": true,
   "description": "Tracker de vuelos EZE-Inglaterra cruzado con el fixture de Premier League",
   "scripts": {
-    "test": "node --test tests/",
+    "test": "node --test \"tests/*.test.js\"",
     "build": "node scripts/build-snippets.js"
   },
   "engines": {
@@ -650,14 +650,20 @@ function generarVentanas(partidosCity, todosLosPartidos, config, hoy) {
         partidos_extra: extras.map((p) => p.match_id).join(';'),
         score,
         activa: false,
+        ultima_alerta_ts: null,
       });
     }
   }
 
-  ventanas.sort((a, b) => b.score - a.score || a.fecha_ida.localeCompare(b.fecha_ida));
-  ventanas.slice(0, config.ventanas_activas).forEach((v) => { v.activa = true; });
+  // Se copia antes de ordenar y se reconstruye cada objeto en vez de mutarlo:
+  // sort() y una asignacion directa modificarian en el lugar, contra la regla
+  // de inmutabilidad del proyecto. Se usa el spread y no toSorted() porque
+  // este codigo termina inline en un nodo Code de n8n, cuya version de Node no
+  // controlamos.
+  const ordenadas = [...ventanas].sort((a, b) =>
+    b.score - a.score || a.fecha_ida.localeCompare(b.fecha_ida));
 
-  return ventanas;
+  return ordenadas.map((v, i) => ({ ...v, activa: i < config.ventanas_activas }));
 }
 
 module.exports = { estaEnRangoTrackeable, esTemporadaBaja, generarVentanas };
