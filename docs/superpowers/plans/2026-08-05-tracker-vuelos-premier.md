@@ -1237,7 +1237,11 @@ function extraerCuerpo(nombreModulo) {
   return fuente
     .split('\n')
     .filter((linea) => !/^'use strict';/.test(linea))
-    .filter((linea) => !/require\(['"]\.\//.test(linea))
+    // El patron debe coincidir con el de tests/sync.test.js. Si el extractor
+    // reconociera menos requires que el test, un modulo con require('../x')
+    // pondria el test en rojo sin que quede claro por que el extractor no lo
+    // saco.
+    .filter((linea) => !/require\(['"]\.\.?\//.test(linea))
     .join('\n')
     .replace(/module\.exports\s*=\s*\{[\s\S]*?\};?\s*$/m, '')
     .trim();
