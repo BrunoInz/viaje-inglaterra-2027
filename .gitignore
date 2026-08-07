@@ -2,3 +2,7 @@ node_modules/
 .env
 *.log
 .DS_Store
+
+# Mapa de IDs de la instancia de n8n (workflows y credenciales). Es estado
+# local del deploy, no parte del proyecto.
+.n8n-deploy.json

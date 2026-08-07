@@ -94,7 +94,8 @@ function testsComunes({ archivo, wf, snippets = {} }) {
     const env = fs.readFileSync(path.join(RAIZ, '.env'), 'utf8');
 
     for (const linea of env.split('\n')) {
-      const match = linea.match(/^([A-Z_]+)=(.+)$/);
+      // Los digitos importan: sin ellos N8N_API_KEY quedaba fuera del chequeo.
+      const match = linea.match(/^([A-Z0-9_]+)=(.+)$/);
       if (!match) continue;
       const valor = match[2].trim();
       if (valor.length < 8) continue;

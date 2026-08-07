@@ -9,7 +9,8 @@
     "build:snippets": "node scripts/build-snippets.js",
     "build:wf1": "node scripts/build-wf1.js",
     "build:wf2": "node scripts/build-wf2.js",
-    "build:wf3": "node scripts/build-wf3.js"
+    "build:wf3": "node scripts/build-wf3.js",
+    "deploy": "node scripts/deploy.js"
   },
   "engines": {
     "node": ">=20"
