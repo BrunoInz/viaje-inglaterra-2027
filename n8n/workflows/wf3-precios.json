@@ -75,14 +75,6 @@
           "value": "ventanas",
           "mode": "name"
         },
-        "filtersUI": {
-          "values": [
-            {
-              "lookupColumn": "activa",
-              "lookupValue": "TRUE"
-            }
-          ]
-        },
         "options": {}
       },
       "id": "sheets-ventanas",
@@ -93,10 +85,25 @@
         400,
         0
       ],
-      "notes": "Solo las activas: son las 6 que el WF2 marca por score.",
+      "notes": "Se leen todas y filtra el nodo siguiente: el filtro del propio nodo compara contra texto y la columna activa es un booleano.",
       "retryOnFail": true,
       "maxTries": 5,
       "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $input.all().filter((item) => {\n  const activa = item.json.activa;\n  return activa === true || String(activa).trim().toLowerCase() === 'true';\n});"
+      },
+      "id": "code-solo-activas",
+      "name": "Solo ventanas activas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "notes": "Las 6 que el WF2 marca por score. Con el filtro del nodo de Sheets salian 0 filas."
     },
     {
       "parameters": {
@@ -108,7 +115,7 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        600,
+        780,
         0
       ],
       "notes": "Salida 0 = done (sin conectar), salida 1 = loop. Batch 1: los snippets hacen $('Ventana actual').first() y esperan una sola ventana."
@@ -277,6 +284,15 @@
     {
       "parameters": {
         "url": "=https://www.flylevel.com/nwe/flights/api/calendar/?triptype=OW&origin=EZE&destination=BCN&month={{ $('Ventana actual').first().json.fecha_ida.split('-')[1] }}&year={{ $('Ventana actual').first().json.fecha_ida.split('-')[0] }}&currencyCode=USD",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            }
+          ]
+        },
         "options": {}
       },
       "id": "http-level-ida",
@@ -289,11 +305,21 @@
       ],
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 5000
+      "waitBetweenTries": 5000,
+      "notes": "Endpoint publico, sin credencial. El User-Agent NO es opcional: flylevel responde 403 a cualquier request que parezca un bot."
     },
     {
       "parameters": {
         "url": "=https://www.flylevel.com/nwe/flights/api/calendar/?triptype=OW&origin=BCN&destination=EZE&month={{ $('Ventana actual').first().json.fecha_vuelta.split('-')[1] }}&year={{ $('Ventana actual').first().json.fecha_vuelta.split('-')[0] }}&currencyCode=USD",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            }
+          ]
+        },
         "options": {}
       },
       "id": "http-level-vuelta",
@@ -306,7 +332,8 @@
       ],
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 5000
+      "waitBetweenTries": 5000,
+      "notes": "Mismo User-Agent obligatorio que la ida."
     },
     {
       "parameters": {
@@ -604,18 +631,10 @@
           "value": "ventanas",
           "mode": "name"
         },
-        "filtersUI": {
-          "values": [
-            {
-              "lookupColumn": "activa",
-              "lookupValue": "TRUE"
-            }
-          ]
-        },
         "options": {}
       },
       "id": "sheets-ventanas-digest",
-      "name": "Leer ventanas digest",
+      "name": "Leer ventanas digest raw",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
@@ -625,6 +644,21 @@
       "retryOnFail": true,
       "maxTries": 5,
       "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $input.all().filter((item) => {\n  const activa = item.json.activa;\n  return activa === true || String(activa).trim().toLowerCase() === 'true';\n});"
+      },
+      "id": "code-solo-activas-digest",
+      "name": "Leer ventanas digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        700
+      ],
+      "notes": "Se llama asi a proposito: es el nombre que referencia el Code del digest."
     },
     {
       "parameters": {
@@ -645,10 +679,11 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        600,
+        800,
         700
       ],
       "alwaysOutputData": true,
+      "executeOnce": true,
       "retryOnFail": true,
       "maxTries": 5,
       "waitBetweenTries": 5000
@@ -663,7 +698,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        800,
+        1000,
         700
       ]
     },
@@ -678,7 +713,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        1020,
+        1220,
         700
       ]
     }
@@ -718,6 +753,17 @@
       ]
     },
     "Leer ventanas": {
+      "main": [
+        [
+          {
+            "node": "Solo ventanas activas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Solo ventanas activas": {
       "main": [
         [
           {
@@ -959,6 +1005,17 @@
       ]
     },
     "Leer config digest": {
+      "main": [
+        [
+          {
+            "node": "Leer ventanas digest raw",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer ventanas digest raw": {
       "main": [
         [
           {

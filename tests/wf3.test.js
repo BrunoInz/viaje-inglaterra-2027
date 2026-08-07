@@ -132,12 +132,51 @@ test('el loop procesa las ventanas de a una', () => {
   assert.strictEqual(nodo('Ventana actual').parameters.batchSize, 1);
 });
 
-test('solo se consultan las ventanas activas', () => {
-  for (const nombre of ['Leer ventanas', 'Leer ventanas digest']) {
-    const filtros = nodo(nombre).parameters.filtersUI.values;
-    assert.deepStrictEqual(filtros, [{ lookupColumn: 'activa', lookupValue: 'TRUE' }],
-      `${nombre} tiene que filtrar por activa = TRUE`);
+test('el filtro de activas no depende del nodo de Sheets', () => {
+  // El WF2 escribe `activa` como booleano y Sheets lo guarda como booleano. El
+  // filtro del propio nodo compara contra texto, asi que 'TRUE' devolvia CERO
+  // filas: sin error, simplemente nada, y el loop no consultaba una sola
+  // ventana. Se filtra en un Code que acepta las dos representaciones.
+  for (const nombre of ['Leer ventanas', 'Leer ventanas digest raw']) {
+    assert.strictEqual(nodo(nombre).parameters.filtersUI, undefined,
+      `${nombre} volvio a usar el filtro del nodo, que no matchea booleanos`);
   }
+
+  for (const nombre of ['Solo ventanas activas', 'Leer ventanas digest']) {
+    const codigo = nodo(nombre).parameters.jsCode;
+    assert.strictEqual(nodo(nombre).type, 'n8n-nodes-base.code', `${nombre} deberia ser un Code`);
+    assert.ok(codigo.includes('=== true'), `${nombre} no acepta el booleano`);
+    assert.ok(codigo.includes("toLowerCase() === 'true'"), `${nombre} no acepta el texto`);
+  }
+});
+
+test('el filtro de activas acepta booleano y texto', () => {
+  // Se ejecuta el codigo real del nodo contra las dos formas en que la celda
+  // puede llegar.
+  const codigo = nodo('Solo ventanas activas').parameters.jsCode;
+  const filas = [
+    { json: { ventana_id: 'a', activa: true } },
+    { json: { ventana_id: 'b', activa: 'TRUE' } },
+    { json: { ventana_id: 'c', activa: 'true' } },
+    { json: { ventana_id: 'd', activa: false } },
+    { json: { ventana_id: 'e', activa: 'FALSE' } },
+    { json: { ventana_id: 'f', activa: '' } },
+  ];
+
+  // eslint-disable-next-line no-new-func
+  const ejecutar = new Function('$input', codigo);
+  const activas = ejecutar({ all: () => filas }).map((i) => i.json.ventana_id);
+
+  assert.deepStrictEqual(activas, ['a', 'b', 'c'],
+    'tienen que pasar las tres formas de verdadero y ninguna de falso');
+});
+
+test('el digest lee las ventanas ya filtradas', () => {
+  // El Code del digest hace $('Leer ventanas digest'): si ese nombre quedara
+  // en el nodo de Sheets, el resumen listaria las 48 ventanas en vez de 6.
+  const codigo = nodo('Armar digest').parameters.jsCode;
+  assert.ok(codigo.includes("$('Leer ventanas digest')"));
+  assert.strictEqual(nodo('Leer ventanas digest').type, 'n8n-nodes-base.code');
 });
 
 test('los precios se appendean, nunca se actualizan', () => {
@@ -173,6 +212,20 @@ test('el normalizador de Travelpayouts entrega el campo que el snippet lee', () 
   const snippet = nodo('Normalizar precios').parameters.jsCode;
   assert.ok(snippet.includes("$('Travelpayouts BCN-LON').first().json.precio_usd"),
     'cambio el contrato del snippet: revisar el normalizador');
+});
+
+test('las consultas a Level mandan User-Agent de navegador', () => {
+  // flylevel.com responde 403 a cualquier request sin User-Agent de navegador.
+  // No es autenticacion —el endpoint es publico— pero sin el header la rama de
+  // Level muere y se pierde la ruta via Barcelona entera.
+  for (const nombre of ['Level EZE-BCN', 'Level BCN-EZE']) {
+    const { sendHeaders, headerParameters } = nodo(nombre).parameters;
+    assert.strictEqual(sendHeaders, true, `${nombre} no manda headers`);
+
+    const ua = headerParameters.parameters.find((p) => p.name === 'User-Agent');
+    assert.ok(ua, `${nombre} sin User-Agent: flylevel devuelve 403`);
+    assert.ok(/Mozilla\/5\.0/.test(ua.value), `${nombre} con un User-Agent que no parece navegador`);
+  }
 });
 
 test('las dos consultas a Level usan la fecha que les corresponde', () => {

@@ -87,6 +87,19 @@ const precio_usd = exacto !== null ? exacto : minimo;
 
 return [{ json: { precio_usd, fecha_exacta: exacto !== null, dias_en_cache: todos.length } }];`;
 
+/**
+ * Ver desviacion 5.
+ *
+ * El filtro `activa = TRUE` del propio nodo de Sheets no sirve: el WF2 escribe
+ * un booleano y Sheets lo guarda como booleano, asi que la comparacion contra
+ * el texto 'TRUE' devuelve cero filas —sin error, simplemente nada— y el loop
+ * no consulta ni una ventana. Filtrar aca cubre las dos representaciones.
+ */
+const SOLO_ACTIVAS = `return $input.all().filter((item) => {
+  const activa = item.json.activa;
+  return activa === true || String(activa).trim().toLowerCase() === 'true';
+});`;
+
 // Ver desviacion 4. Este Code no sale de lib/: es puro formateo de salida.
 const ARMAR_DIGEST = `const ventanas = $('Leer ventanas digest').all().map((i) => i.json);
 const precios = $('Leer precios digest').all().map((i) => i.json);
@@ -179,13 +192,29 @@ function nodoIf(id, nombre, expresion, posicion, notas) {
   };
 }
 
+/**
+ * flylevel.com responde 403 a cualquier request sin User-Agent de navegador.
+ * No es autenticacion: el endpoint es publico, pero rechaza lo que parece un
+ * bot. n8n manda su propio User-Agent, asi que hay que pisarlo.
+ */
+const USER_AGENT_NAVEGADOR = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+  + 'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
 function nodoHttp(id, nombre, url, posicion, extra = {}) {
-  const { autenticacion, notas, continueOnFail, ...resto } = extra;
+  const { autenticacion, notas, continueOnFail, headers, ...resto } = extra;
   return {
     parameters: {
       url,
       ...(autenticacion
         ? { authentication: 'genericCredentialType', genericAuthType: autenticacion }
+        : {}),
+      ...(headers
+        ? {
+          sendHeaders: true,
+          headerParameters: {
+            parameters: Object.entries(headers).map(([name, value]) => ({ name, value })),
+          },
+        }
         : {}),
       options: {},
     },
@@ -228,25 +257,29 @@ function construirRamaDiaria() {
     },
     ...config.nodos,
     {
-      parameters: {
-        ...hojaSheets('ventanas'),
-        filtersUI: { values: [{ lookupColumn: 'activa', lookupValue: 'TRUE' }] },
-        options: {},
-      },
+      parameters: { ...hojaSheets('ventanas'), options: {} },
       id: 'sheets-ventanas',
       name: 'Leer ventanas',
       type: 'n8n-nodes-base.googleSheets',
       typeVersion: 4.5,
       position: [400, 0],
-      notes: 'Solo las activas: son las 6 que el WF2 marca por score.',
+      notes: 'Se leen todas y filtra el nodo siguiente: el filtro del propio nodo compara '
+        + 'contra texto y la columna activa es un booleano.',
     },
+    nodoCode(
+      'code-solo-activas',
+      'Solo ventanas activas',
+      SOLO_ACTIVAS,
+      [600, 0],
+      'Las 6 que el WF2 marca por score. Con el filtro del nodo de Sheets salian 0 filas.'
+    ),
     {
       parameters: { batchSize: 1, options: {} },
       id: 'loop-ventanas',
       name: 'Ventana actual',
       type: 'n8n-nodes-base.splitInBatches',
       typeVersion: 3,
-      position: [600, 0],
+      position: [780, 0],
       notes: 'Salida 0 = done (sin conectar), salida 1 = loop. Batch 1: los snippets '
         + "hacen $('Ventana actual').first() y esperan una sola ventana.",
     },
@@ -310,8 +343,15 @@ function construirRamaDiaria() {
     },
     nodoTelegram('telegram-cuota', 'Avisar cuota', TEXTO_CUOTA, [1920, 340], config.nombrePlano,
       'Una sola vez por mes: la fila de config bloquea los avisos siguientes.'),
-    nodoHttp('http-level-ida', 'Level EZE-BCN', urlLevel('EZE', 'BCN', 'fecha_ida'), [1480, 0]),
-    nodoHttp('http-level-vuelta', 'Level BCN-EZE', urlLevel('BCN', 'EZE', 'fecha_vuelta'), [1700, 0]),
+    nodoHttp('http-level-ida', 'Level EZE-BCN', urlLevel('EZE', 'BCN', 'fecha_ida'), [1480, 0], {
+      headers: { 'User-Agent': USER_AGENT_NAVEGADOR },
+      notas: 'Endpoint publico, sin credencial. El User-Agent NO es opcional: flylevel '
+        + 'responde 403 a cualquier request que parezca un bot.',
+    }),
+    nodoHttp('http-level-vuelta', 'Level BCN-EZE', urlLevel('BCN', 'EZE', 'fecha_vuelta'), [1700, 0], {
+      headers: { 'User-Agent': USER_AGENT_NAVEGADOR },
+      notas: 'Mismo User-Agent obligatorio que la ida.',
+    }),
     nodoHttp(
       'http-travelpayouts',
       'Travelpayouts BCN-LON raw',
@@ -404,7 +444,8 @@ function construirRamaDiaria() {
     Diario: { main: [[conexion(config.nombreRaw)]] },
     [config.nombreRaw]: { main: [[conexion(config.nombrePlano)]] },
     [config.nombrePlano]: { main: [[conexion('Leer ventanas')]] },
-    'Leer ventanas': { main: [[conexion('Ventana actual')]] },
+    'Leer ventanas': { main: [[conexion('Solo ventanas activas')]] },
+    'Solo ventanas activas': { main: [[conexion('Ventana actual')]] },
     // Salida 0 = done (se deja vacia), salida 1 = loop.
     'Ventana actual': { main: [[], [conexion('Cuota disponible?')]] },
     'Cuota disponible?': { main: [[conexion('SerpApi raw')], [conexion('SerpApi')]] },
@@ -452,35 +493,40 @@ function construirRamaDigest() {
     },
     ...config.nodos,
     {
-      parameters: {
-        ...hojaSheets('ventanas'),
-        filtersUI: { values: [{ lookupColumn: 'activa', lookupValue: 'TRUE' }] },
-        options: {},
-      },
+      parameters: { ...hojaSheets('ventanas'), options: {} },
       id: 'sheets-ventanas-digest',
-      name: 'Leer ventanas digest',
+      name: 'Leer ventanas digest raw',
       type: 'n8n-nodes-base.googleSheets',
       typeVersion: 4.5,
       position: [400, 700],
     },
+    nodoCode(
+      'code-solo-activas-digest',
+      'Leer ventanas digest',
+      SOLO_ACTIVAS,
+      [600, 700],
+      'Se llama asi a proposito: es el nombre que referencia el Code del digest.'
+    ),
     {
       parameters: { ...hojaSheets('precios'), options: {} },
       id: 'sheets-precios-digest',
       name: 'Leer precios digest',
       type: 'n8n-nodes-base.googleSheets',
       typeVersion: 4.5,
-      position: [600, 700],
+      position: [800, 700],
       alwaysOutputData: true,
+      executeOnce: true,
     },
-    nodoCode('code-digest', 'Armar digest', ARMAR_DIGEST, [800, 700]),
-    nodoTelegram('telegram-digest', 'Enviar digest', '={{ $json.texto }}', [1020, 700],
+    nodoCode('code-digest', 'Armar digest', ARMAR_DIGEST, [1000, 700]),
+    nodoTelegram('telegram-digest', 'Enviar digest', '={{ $json.texto }}', [1220, 700],
       config.nombrePlano),
   ];
 
   const connections = {
     Digest: { main: [[conexion(config.nombreRaw)]] },
     [config.nombreRaw]: { main: [[conexion(config.nombrePlano)]] },
-    [config.nombrePlano]: { main: [[conexion('Leer ventanas digest')]] },
+    [config.nombrePlano]: { main: [[conexion('Leer ventanas digest raw')]] },
+    'Leer ventanas digest raw': { main: [[conexion('Leer ventanas digest')]] },
     'Leer ventanas digest': { main: [[conexion('Leer precios digest')]] },
     'Leer precios digest': { main: [[conexion('Armar digest')]] },
     'Armar digest': { main: [[conexion('Enviar digest')]] },
