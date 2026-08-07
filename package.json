@@ -5,9 +5,11 @@
   "description": "Tracker de vuelos EZE-Inglaterra cruzado con el fixture de Premier League",
   "scripts": {
     "test": "node --test \"tests/*.test.js\"",
-    "build": "node scripts/build-snippets.js && node scripts/build-wf1.js",
+    "build": "node scripts/build-snippets.js && node scripts/build-wf1.js && node scripts/build-wf2.js && node scripts/build-wf3.js",
     "build:snippets": "node scripts/build-snippets.js",
-    "build:wf1": "node scripts/build-wf1.js"
+    "build:wf1": "node scripts/build-wf1.js",
+    "build:wf2": "node scripts/build-wf2.js",
+    "build:wf3": "node scripts/build-wf3.js"
   },
   "engines": {
     "node": ">=20"

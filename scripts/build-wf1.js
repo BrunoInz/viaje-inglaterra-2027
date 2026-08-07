@@ -22,27 +22,17 @@
  *     pestana esta vacia y sin esa opcion n8n corta la ejecucion ahi.
  */
 
-const fs = require('node:fs');
-const path = require('node:path');
+const {
+  leerSnippet,
+  hojaSheets,
+  nodoCode,
+  conexion,
+  nodosConfig,
+  escribir,
+  settings,
+} = require('./n8n-comun');
 
-const RAIZ = path.join(__dirname, '..');
-const DIR_SNIPPETS = path.join(RAIZ, 'n8n', 'code-snippets');
-const DIR_SALIDA = path.join(RAIZ, 'n8n', 'workflows');
-const DESTINO = path.join(DIR_SALIDA, 'wf1-fixture-sync.json');
-
-// Se reemplazan a mano en n8n despues de importar (Task 7, Step 8).
-const SHEET_ID = 'REEMPLAZAR_CON_GOOGLE_SHEET_ID';
-
-function leerSnippet(nombre) {
-  return fs.readFileSync(path.join(DIR_SNIPPETS, `${nombre}.js`), 'utf8');
-}
-
-function hojaSheets(nombreHoja) {
-  return {
-    documentId: { __rl: true, value: SHEET_ID, mode: 'id' },
-    sheetName: { __rl: true, value: nombreHoja, mode: 'name' },
-  };
-}
+const ARCHIVO = 'wf1-fixture-sync.json';
 
 // football-data anida los partidos en `matches`. Se expanden aca, antes del
 // Merge, porque despues de fusionar las ramas ya no se sabe cual era cual.
@@ -54,16 +44,6 @@ return $input.all().flatMap((item) => {
   return partidos.map((partido) => ({ json: { ...partido, _competencia: competencia } }));
 });`;
 }
-
-const APLANAR_CONFIG = `// La pestana config es clave/valor: una fila por parametro. Los snippets
-// esperan un unico objeto, asi que se aplana aca.
-const config = {};
-
-for (const item of $input.all()) {
-  if (item.json.clave) config[item.json.clave] = item.json.valor;
-}
-
-return [{ json: config }];`;
 
 const TEXTO_TELEGRAM = [
   '=⚠️ PARTIDO REPROGRAMADO',
@@ -95,19 +75,9 @@ function nodoHttpFootballData(nombre, competencia, posicion) {
   };
 }
 
-function nodoCode(id, nombre, codigo, posicion, notas) {
-  return {
-    parameters: { mode: 'runOnceForAllItems', jsCode: codigo },
-    id,
-    name: nombre,
-    type: 'n8n-nodes-base.code',
-    typeVersion: 2,
-    position: posicion,
-    ...(notas ? { notes: notas } : {}),
-  };
-}
-
 function construirWorkflow() {
+  const config = nodosConfig({ posicionRaw: [0, 300], posicionAplanado: [220, 300] });
+
   const nodos = [
     {
       parameters: {
@@ -121,21 +91,7 @@ function construirWorkflow() {
       typeVersion: 1.2,
       position: [-220, 300],
     },
-    {
-      parameters: { ...hojaSheets('config'), options: {} },
-      id: 'sheets-config-raw',
-      name: 'Leer config raw',
-      type: 'n8n-nodes-base.googleSheets',
-      typeVersion: 4.5,
-      position: [0, 300],
-    },
-    nodoCode(
-      'code-aplanar-config',
-      'Leer config',
-      APLANAR_CONFIG,
-      [220, 300],
-      'Se llama "Leer config" a proposito: es el nombre que referencian los snippets.'
-    ),
+    ...config.nodos,
     {
       parameters: { ...hojaSheets('fixtures'), options: {} },
       id: 'sheets-fixtures-previos',
@@ -250,12 +206,6 @@ function construirWorkflow() {
     },
   ];
 
-  const conexion = (nodo, indiceEntrada = 0) => ({
-    node: nodo,
-    type: 'main',
-    index: indiceEntrada,
-  });
-
   const connections = {
     'Domingos 08:00': { main: [[conexion('Leer config raw')]] },
     'Leer config raw': { main: [[conexion('Leer config')]] },
@@ -279,19 +229,13 @@ function construirWorkflow() {
     name: 'WF1 - Fixture Sync',
     nodes: nodos,
     connections,
-    settings: {
-      executionOrder: 'v1',
-      timezone: 'America/Argentina/Buenos_Aires',
-      saveManualExecutions: true,
-    },
+    settings: settings(),
     pinData: {},
   };
 }
 
 function build() {
-  fs.mkdirSync(DIR_SALIDA, { recursive: true });
-  fs.writeFileSync(DESTINO, `${JSON.stringify(construirWorkflow(), null, 2)}\n`, 'utf8');
-  console.log(`escrito ${DESTINO}`);
+  escribir(ARCHIVO, construirWorkflow());
 }
 
 if (require.main === module) build();

@@ -1,0 +1,210 @@
+{
+  "name": "WF2 - Calculo de ventanas",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                0
+              ],
+              "triggerAtHour": 8,
+              "triggerAtMinute": 30
+            }
+          ]
+        }
+      },
+      "id": "trigger-semanal",
+      "name": "Domingos 08:30",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -220,
+        300
+      ],
+      "notes": "Media hora despues del WF1: la pestana fixtures ya quedo actualizada."
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_CON_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "config",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "sheets-config-raw",
+      "name": "Leer config raw",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// La pestana config es clave/valor: una fila por parametro. Los snippets\n// esperan un unico objeto, asi que se aplana aca.\nconst config = {};\n\nfor (const item of $input.all()) {\n  if (item.json.clave) config[item.json.clave] = item.json.valor;\n}\n\nreturn [{ json: config }];"
+      },
+      "id": "code-aplanar-config",
+      "name": "Leer config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "notes": "Se llama \"Leer config\" a proposito: es el nombre que referencian los snippets."
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_CON_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "fixtures",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "sheets-fixtures",
+      "name": "Leer fixtures",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        440,
+        300
+      ],
+      "notes": "Nombre exacto: el snippet hace $('Leer fixtures').all()."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// GENERADO AUTOMATICAMENTE por scripts/build-snippets.js\n// No editar a mano: modificar lib/ y correr 'npm run build'.\n\n// Ciudad de cada club, para el filtro de accesibilidad geografica.\n// Solo se listan los clubes que el spec considera relevantes.\nconst CIUDAD_POR_TLA = {\n  MCI: 'Manchester',\n  MUN: 'Manchester',\n  LIV: 'Liverpool',\n  EVE: 'Liverpool',\n  FUL: 'London',\n  BRE: 'London',\n  WHU: 'London',\n  CRY: 'London',\n  ARS: 'London',\n  CHE: 'London',\n  TOT: 'London',\n  WOL: 'Wolverhampton',\n  AVL: 'Birmingham',\n  BUR: 'Burnley',\n  BOU: 'Bournemouth',\n};\n\nconst OFFSETS_VARIANTE = [2, 5, 8];\nconst DIAS_VIAJE = 10;\n\nconst SCORE = {\n  BASE: 100,\n  POR_ACCESIBLE: 20,\n  CHAMPIONS: 30,\n  TEMPORADA_BAJA: 10,\n};\n\n// Temporada baja de vuelos segun el spec: 7 de enero a 15 de marzo.\nconst TEMPORADA_BAJA = {\n  DESDE_MMDD: '01-07',\n  HASTA_MMDD: '03-15',\n};\n\nconst RANGO_TRACKEABLE = {\n  PISO_DIAS: 60,\n  TECHO_DIAS: 320,\n};\n\nconst ALERTA = {\n  FACTOR: 0.85,\n  MIN_REGISTROS: 7,\n  ANTISPAM_HORAS: 48,\n};\n\n// El require va en UNA sola linea a proposito: scripts/build-snippets.js\n// elimina los require locales filtrando linea por linea, y un require\n// multilinea dejaria un 'const {' huerfano en el snippet generado.\n\nconst MS_POR_DIA = 86400000;\n\nfunction aFecha(iso) {\n  return new Date(String(iso).slice(0, 10) + 'T00:00:00Z');\n}\n\nfunction aYMD(date) {\n  return date.toISOString().slice(0, 10);\n}\n\nfunction sumarDias(fechaYMD, dias) {\n  return aYMD(new Date(aFecha(fechaYMD).getTime() + dias * MS_POR_DIA));\n}\n\nfunction estaEnRangoTrackeable(fechaPartido, hoy) {\n  const dias = (aFecha(fechaPartido) - aFecha(hoy)) / MS_POR_DIA;\n  return dias >= RANGO_TRACKEABLE.PISO_DIAS && dias <= RANGO_TRACKEABLE.TECHO_DIAS;\n}\n\n// Compara solo mes y dia: el rango de temporada baja se repite cada año.\nfunction esTemporadaBaja(fechaIda) {\n  const mmdd = String(fechaIda).slice(5, 10);\n  return mmdd >= TEMPORADA_BAJA.DESDE_MMDD && mmdd <= TEMPORADA_BAJA.HASTA_MMDD;\n}\n\nfunction esAccesible(partido, config) {\n  return config.clubes_accesibles.includes(partido.tla_local)\n    && config.ciudades_ok.includes(partido.ciudad);\n}\n\nfunction estaDentro(fechaPartido, ida, vuelta) {\n  const f = aFecha(fechaPartido);\n  return f >= aFecha(ida) && f <= aFecha(vuelta);\n}\n\nfunction generarVentanas(partidosCity, todosLosPartidos, config, hoy) {\n  const ventanas = [];\n\n  for (const partido of partidosCity) {\n    if (!estaEnRangoTrackeable(partido.fecha_utc, hoy)) continue;\n\n    for (const offset of OFFSETS_VARIANTE) {\n      const fecha_ida = sumarDias(partido.fecha_utc, -offset);\n      const fecha_vuelta = sumarDias(fecha_ida, DIAS_VIAJE);\n\n      const extras = todosLosPartidos.filter((p) =>\n        String(p.match_id) !== String(partido.match_id)\n        && estaDentro(p.fecha_utc, fecha_ida, fecha_vuelta)\n        && esAccesible(p, config));\n\n      const champions = todosLosPartidos.some((p) =>\n        String(p.match_id) !== String(partido.match_id)\n        && p.competencia === 'CL'\n        && p.tla_local === 'MCI'\n        && estaDentro(p.fecha_utc, fecha_ida, fecha_vuelta));\n\n      let score = SCORE.BASE + SCORE.POR_ACCESIBLE * extras.length;\n      if (champions) score += SCORE.CHAMPIONS;\n      if (esTemporadaBaja(fecha_ida)) score += SCORE.TEMPORADA_BAJA;\n\n      ventanas.push({\n        // Derivado del partido y el offset, nunca de la fecha de corrida:\n        // asi el id sobrevive entre ejecuciones y el historico no se corta.\n        ventana_id: `${partido.match_id}-${offset}`,\n        fecha_ida,\n        fecha_vuelta,\n        match_id_city: partido.match_id,\n        partidos_extra: extras.map((p) => p.match_id).join(';'),\n        score,\n        activa: false,\n        ultima_alerta_ts: null,\n      });\n    }\n  }\n\n  const ordenadas = [...ventanas].sort((a, b) => b.score - a.score || a.fecha_ida.localeCompare(b.fecha_ida));\n\n  return ordenadas.map((v, i) => ({ ...v, activa: i < config.ventanas_activas }));\n}\n\n// --- orquestacion n8n ---\nconst config = $('Leer config').first().json;\nconst todos = $('Leer fixtures').all().map((i) => i.json);\nconst city = todos.filter((p) => p.tla_local === 'MCI' && p.competencia === 'PL');\nconst hoy = new Date().toISOString().slice(0, 10);\n\nconst parametros = {\n  ventanas_activas: Number(config.ventanas_activas),\n  clubes_accesibles: String(config.clubes_accesibles).split(';'),\n  ciudades_ok: String(config.ciudades_ok).split(';'),\n};\n\nreturn generarVentanas(city, todos, parametros, hoy).map((v) => ({ json: v }));\n"
+      },
+      "id": "code-ventanas",
+      "name": "Calcular ventanas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_CON_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "ventanas",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "ventana_id"
+          ],
+          "value": {
+            "ventana_id": "={{ $json.ventana_id }}",
+            "fecha_ida": "={{ $json.fecha_ida }}",
+            "fecha_vuelta": "={{ $json.fecha_vuelta }}",
+            "match_id_city": "={{ $json.match_id_city }}",
+            "partidos_extra": "={{ $json.partidos_extra }}",
+            "score": "={{ $json.score }}",
+            "activa": "={{ $json.activa }}"
+          },
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "sheets-guardar-ventanas",
+      "name": "Guardar ventanas",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        880,
+        300
+      ],
+      "notes": "Mapeo explicito a proposito: con automapeo se escribiria ultima_alerta_ts en blanco cada domingo y el anti-spam de 48h del WF3 se reiniciaria solo."
+    }
+  ],
+  "connections": {
+    "Domingos 08:30": {
+      "main": [
+        [
+          {
+            "node": "Leer config raw",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer config raw": {
+      "main": [
+        [
+          {
+            "node": "Leer config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer config": {
+      "main": [
+        [
+          {
+            "node": "Leer fixtures",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer fixtures": {
+      "main": [
+        [
+          {
+            "node": "Calcular ventanas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular ventanas": {
+      "main": [
+        [
+          {
+            "node": "Guardar ventanas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Argentina/Buenos_Aires",
+    "saveManualExecutions": true
+  },
+  "pinData": {}
+}

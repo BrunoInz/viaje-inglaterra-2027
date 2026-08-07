@@ -1,0 +1,983 @@
+{
+  "name": "WF3 - Precios y alertas",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 9,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "trigger-diario",
+      "name": "Diario",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_CON_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "config",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "sheets-config-raw",
+      "name": "Leer config raw",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// La pestana config es clave/valor: una fila por parametro. Los snippets\n// esperan un unico objeto, asi que se aplana aca.\nconst config = {};\n\nfor (const item of $input.all()) {\n  if (item.json.clave) config[item.json.clave] = item.json.valor;\n}\n\nreturn [{ json: config }];"
+      },
+      "id": "code-aplanar-config",
+      "name": "Leer config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        0
+      ],
+      "notes": "Se llama \"Leer config\" a proposito: es el nombre que referencian los snippets."
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_CON_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "ventanas",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "activa",
+              "lookupValue": "TRUE"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "sheets-ventanas",
+      "name": "Leer ventanas",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        400,
+        0
+      ],
+      "notes": "Solo las activas: son las 6 que el WF2 marca por score."
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "loop-ventanas",
+      "name": "Ventana actual",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        600,
+        0
+      ],
+      "notes": "Salida 0 = done (sin conectar), salida 1 = loop. Batch 1: los snippets hacen $('Ventana actual').first() y esperan una sola ventana."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-if-cuota",
+              "leftValue": "={{ $('Leer config').first().json.serpapi_agotada_mes !== new Date().toISOString().slice(0, 7) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "if-cuota",
+      "name": "Cuota disponible?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        820,
+        100
+      ],
+      "notes": "El flag guarda el mes (YYYY-MM), no un booleano: al cambiar de mes la comparacion deja de coincidir sola y SerpApi se reactiva sin tocar nada."
+    },
+    {
+      "parameters": {
+        "url": "=https://serpapi.com/search?engine=google_flights&departure_id=EZE&arrival_id=LHR&outbound_date={{ $('Ventana actual').first().json.fecha_ida }}&return_date={{ $('Ventana actual').first().json.fecha_vuelta }}&currency=USD&adults={{ $('Leer config').first().json.pasajeros }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "options": {}
+      },
+      "id": "http-serpapi",
+      "name": "SerpApi raw",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "notes": "Credencial Query Auth: nombre api_key, valor la key de SerpApi. onError continueRegularOutput a proposito: sin eso un 429 corta la ejecucion entera y ni Level ni Travelpayouts llegan a consultarse."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Este nodo existe para que 'Normalizar precios' siempre encuentre un nodo\n// llamado 'SerpApi' ya ejecutado. Cuando la cuota esta agotada el IF anterior\n// saltea la llamada HTTP y entra directo aca: referenciar el nodo salteado\n// lanzaria, asi que se captura y se devuelve un objeto vacio.\nlet datos;\n\ntry {\n  datos = $('SerpApi raw').first().json || {};\n} catch (error) {\n  datos = { _sin_llamada: true };\n}\n\nreturn [{ json: datos }];"
+      },
+      "id": "code-serpapi",
+      "name": "SerpApi",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        100
+      ],
+      "notes": "Se llama 'SerpApi' a proposito: es el nombre que referencia el snippet de normalizacion."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-if-cuota-agotada",
+              "leftValue": "={{ $json.error !== undefined && String($json.error).toLowerCase().includes('run out of searches') }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "if-cuota-agotada",
+      "name": "Detectar cuota agotada",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1480,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_CON_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "config",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "clave"
+          ],
+          "value": {
+            "clave": "serpapi_agotada_mes",
+            "valor": "={{ new Date().toISOString().slice(0, 7) }}"
+          },
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "sheets-marcar-cuota",
+      "name": "Marcar cuota agotada",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1700,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Leer config').first().json.telegram_chat_id }}",
+        "text": "=⚠️ Se agotó la cuota mensual de SerpApi.\n\nEl tracker sigue funcionando con Level y Travelpayouts,\npero sin los datos de Google Flights ni el price insight\nhasta que arranque el mes que viene.",
+        "additionalFields": {}
+      },
+      "id": "telegram-cuota",
+      "name": "Avisar cuota",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1920,
+        340
+      ],
+      "notes": "Una sola vez por mes: la fila de config bloquea los avisos siguientes."
+    },
+    {
+      "parameters": {
+        "url": "=https://www.flylevel.com/nwe/flights/api/calendar/?triptype=OW&origin=EZE&destination=BCN&month={{ $('Ventana actual').first().json.fecha_ida.split('-')[1] }}&year={{ $('Ventana actual').first().json.fecha_ida.split('-')[0] }}&currencyCode=USD",
+        "options": {}
+      },
+      "id": "http-level-ida",
+      "name": "Level EZE-BCN",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1480,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "url": "=https://www.flylevel.com/nwe/flights/api/calendar/?triptype=OW&origin=BCN&destination=EZE&month={{ $('Ventana actual').first().json.fecha_vuelta.split('-')[1] }}&year={{ $('Ventana actual').first().json.fecha_vuelta.split('-')[0] }}&currencyCode=USD",
+        "options": {}
+      },
+      "id": "http-level-vuelta",
+      "name": "Level BCN-EZE",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1700,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "url": "=https://api.travelpayouts.com/v1/prices/calendar?origin=BCN&destination=LON&depart_date={{ $('Ventana actual').first().json.fecha_ida.slice(0, 7) }}&calendar_type=departure_date&currency=usd",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "http-travelpayouts",
+      "name": "Travelpayouts BCN-LON raw",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Credencial Header Auth: nombre X-Access-Token, valor el token de Travelpayouts. Ojo: el endpoint ignora depart_date y responde cache de cualquier mes."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Travelpayouts devuelve { success, data: { \"2027-02-14\": { price, ... }, ... } }:\n// un objeto con las fechas como claves, no el array dayPrices que usa Level.\n// Ademas ignora depart_date y responde cache de cualquier mes, asi que cuando\n// la fecha exacta no esta se cae al minimo disponible como referencia.\nconst respuesta = $input.first().json || {};\nconst porFecha = respuesta.data && typeof respuesta.data === 'object' ? respuesta.data : {};\nconst fechaBuscada = $('Ventana actual').first().json.fecha_ida;\n\nfunction aPrecio(entrada) {\n  const valor = entrada && typeof entrada === 'object' ? entrada.price : entrada;\n  const numero = Number(valor);\n  return Number.isFinite(numero) ? numero : null;\n}\n\nconst exacto = aPrecio(porFecha[fechaBuscada]);\n\nconst todos = Object.values(porFecha).map(aPrecio).filter((p) => p !== null);\nconst minimo = todos.length > 0 ? Math.min(...todos) : null;\n\nconst precio_usd = exacto !== null ? exacto : minimo;\n\nreturn [{ json: { precio_usd, fecha_exacta: exacto !== null, dias_en_cache: todos.length } }];"
+      },
+      "id": "code-travelpayouts",
+      "name": "Travelpayouts BCN-LON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2140,
+        0
+      ],
+      "notes": "Se llama asi a proposito: el snippet hace $('Travelpayouts BCN-LON').first().json.precio_usd."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// GENERADO AUTOMATICAMENTE por scripts/build-snippets.js\n// No editar a mano: modificar lib/ y correr 'npm run build'.\n\nfunction normalizarPrecioGrupo(total, pasajeros) {\n  if (typeof total !== 'number' || !Number.isFinite(total)) return null;\n  if (typeof pasajeros !== 'number' || pasajeros < 1) return null;\n  return Math.round(total / pasajeros);\n}\n\n// Level responde con un precio de relleno uniforme cuando todavia no cargo\n// tarifas para ese mes. Se detecta por varianza cero y no filtrando un valor\n// concreto: el numero de relleno puede cambiar sin aviso, la uniformidad no.\nfunction tieneInventario(dayPrices) {\n  if (!Array.isArray(dayPrices) || dayPrices.length === 0) return false;\n  const distintos = new Set(dayPrices.map((d) => d.price));\n  return distintos.size > 1;\n}\n\nfunction precioDelDia(dayPrices, fechaYMD) {\n  if (!Array.isArray(dayPrices)) return null;\n  const encontrado = dayPrices.find((d) => d.date === fechaYMD);\n  return encontrado ? encontrado.price : null;\n}\n\nfunction precioViaBarcelona({ ezeBcn, bcnEze, bcnLon, costoNocheBcn }) {\n  const tramos = [ezeBcn, bcnEze, bcnLon];\n  if (tramos.some((t) => typeof t !== 'number' || !Number.isFinite(t))) return null;\n  // costoNocheBcn is optional (defaults to 0) but if provided must be a valid number\n  if (costoNocheBcn != null && (typeof costoNocheBcn !== 'number' || !Number.isFinite(costoNocheBcn))) {\n    return null;\n  }\n  return ezeBcn + bcnEze + bcnLon + (costoNocheBcn || 0);\n}\n\n// --- orquestacion n8n ---\nconst config = $('Leer config').first().json;\nconst pasajeros = Number(config.pasajeros);\nconst ventana = $('Ventana actual').first().json;\nconst salida = [];\n\n// SerpApi: precio total del grupo, hay que dividirlo.\nconst serp = $('SerpApi').first().json;\nconst totalSerp = serp && serp.best_flights && serp.best_flights[0]\n  ? serp.best_flights[0].price : null;\nsalida.push({\n  json: {\n    ts: new Date().toISOString(),\n    ventana_id: ventana.ventana_id,\n    ruta: 'EZE-LON-EZE',\n    fuente: 'serpapi',\n    precio_usd: normalizarPrecioGrupo(totalSerp, pasajeros),\n    aerolinea: serp && serp.best_flights && serp.best_flights[0]\n      ? (serp.best_flights[0].flights[0].airline || '') : '',\n    escalas: serp && serp.best_flights && serp.best_flights[0]\n      ? serp.best_flights[0].flights.length - 1 : null,\n    price_insight: serp && serp.price_insights ? serp.price_insights.price_level : '',\n    estado: totalSerp === null ? 'error_fuente' : 'ok',\n  },\n});\n\n// Level: ida y vuelta por separado, con deteccion de mes sin inventario.\nconst idaLevel = $('Level EZE-BCN').first().json;\nconst vueltaLevel = $('Level BCN-EZE').first().json;\nconst diasIda = (idaLevel.data && idaLevel.data.dayPrices) || [];\nconst diasVuelta = (vueltaLevel.data && vueltaLevel.data.dayPrices) || [];\n\nif (!tieneInventario(diasIda) || !tieneInventario(diasVuelta)) {\n  salida.push({\n    json: {\n      ts: new Date().toISOString(),\n      ventana_id: ventana.ventana_id,\n      ruta: 'EZE-BCN-LON',\n      fuente: 'level',\n      precio_usd: null,\n      aerolinea: 'Level',\n      escalas: null,\n      price_insight: '',\n      estado: 'sin_inventario',\n    },\n  });\n} else {\n  const bcnLon = Number($('Travelpayouts BCN-LON').first().json.precio_usd) || null;\n  const total = precioViaBarcelona({\n    ezeBcn: precioDelDia(diasIda, ventana.fecha_ida),\n    bcnEze: precioDelDia(diasVuelta, ventana.fecha_vuelta),\n    bcnLon,\n    costoNocheBcn: Number(config.costo_noche_bcn),\n  });\n  salida.push({\n    json: {\n      ts: new Date().toISOString(),\n      ventana_id: ventana.ventana_id,\n      ruta: 'EZE-BCN-LON',\n      fuente: 'level',\n      precio_usd: total,\n      aerolinea: 'Level + conexion',\n      escalas: 1,\n      price_insight: '',\n      estado: total === null ? 'error_fuente' : 'ok',\n    },\n  });\n}\n\nreturn salida;\n"
+      },
+      "id": "code-normalizar",
+      "name": "Normalizar precios",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2360,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_CON_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "precios",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": [],
+          "value": {},
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "sheets-guardar-precios",
+      "name": "Guardar precios",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2580,
+        0
+      ],
+      "notes": "Append puro: cada corrida agrega historico nuevo, no actualiza lo anterior. La media movil de 14 dias se calcula sobre estas filas."
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_CON_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "precios",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "sheets-historico",
+      "name": "Leer historico",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2800,
+        0
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// GENERADO AUTOMATICAMENTE por scripts/build-snippets.js\n// No editar a mano: modificar lib/ y correr 'npm run build'.\n\n// Ciudad de cada club, para el filtro de accesibilidad geografica.\n// Solo se listan los clubes que el spec considera relevantes.\nconst CIUDAD_POR_TLA = {\n  MCI: 'Manchester',\n  MUN: 'Manchester',\n  LIV: 'Liverpool',\n  EVE: 'Liverpool',\n  FUL: 'London',\n  BRE: 'London',\n  WHU: 'London',\n  CRY: 'London',\n  ARS: 'London',\n  CHE: 'London',\n  TOT: 'London',\n  WOL: 'Wolverhampton',\n  AVL: 'Birmingham',\n  BUR: 'Burnley',\n  BOU: 'Bournemouth',\n};\n\nconst OFFSETS_VARIANTE = [2, 5, 8];\nconst DIAS_VIAJE = 10;\n\nconst SCORE = {\n  BASE: 100,\n  POR_ACCESIBLE: 20,\n  CHAMPIONS: 30,\n  TEMPORADA_BAJA: 10,\n};\n\n// Temporada baja de vuelos segun el spec: 7 de enero a 15 de marzo.\nconst TEMPORADA_BAJA = {\n  DESDE_MMDD: '01-07',\n  HASTA_MMDD: '03-15',\n};\n\nconst RANGO_TRACKEABLE = {\n  PISO_DIAS: 60,\n  TECHO_DIAS: 320,\n};\n\nconst ALERTA = {\n  FACTOR: 0.85,\n  MIN_REGISTROS: 7,\n  ANTISPAM_HORAS: 48,\n};\n\nconst MS_POR_HORA = 3600000;\nconst MS_POR_DIA = 86400000;\n\nfunction mediaMovil(registros, dias, ahora) {\n  const limite = new Date(ahora).getTime() - dias * MS_POR_DIA;\n\n  const validos = (registros || []).filter((r) =>\n    r.estado === 'ok'\n    && typeof r.precio_usd === 'number'\n    && Number.isFinite(r.precio_usd)\n    && new Date(r.ts).getTime() >= limite);\n\n  if (validos.length === 0) return { media: null, cantidad: 0 };\n\n  const suma = validos.reduce((acc, r) => acc + r.precio_usd, 0);\n  return { media: suma / validos.length, cantidad: validos.length };\n}\n\nfunction debeAlertar({ precioActual, registros, umbral, ultimaAlertaTs, ahora }) {\n  const sinAlerta = { alertar: false, motivo: null };\n\n  if (typeof precioActual !== 'number' || !Number.isFinite(precioActual)) return sinAlerta;\n\n  // El anti-spam se evalua primero: si esta bloqueado no importa el motivo.\n  if (ultimaAlertaTs) {\n    const horas = (new Date(ahora).getTime() - new Date(ultimaAlertaTs).getTime()) / MS_POR_HORA;\n    if (horas < ALERTA.ANTISPAM_HORAS) return sinAlerta;\n  }\n\n  if (precioActual < umbral) return { alertar: true, motivo: 'umbral' };\n\n  const { media, cantidad } = mediaMovil(registros, 14, ahora);\n  if (media !== null && cantidad >= ALERTA.MIN_REGISTROS\n      && precioActual <= ALERTA.FACTOR * media) {\n    return { alertar: true, motivo: 'caida_relativa' };\n  }\n\n  return sinAlerta;\n}\n\n// --- orquestacion n8n ---\nconst config = $('Leer config').first().json;\nconst ventana = $('Ventana actual').first().json;\nconst historico = $('Leer historico').all().map((i) => i.json);\nconst nuevos = $('Normalizar precios').all().map((i) => i.json);\nconst ahora = new Date().toISOString();\n\nconst delaVentana = historico.filter((h) => h.ventana_id === ventana.ventana_id);\nconst salida = [];\n\nfor (const registro of nuevos) {\n  if (registro.estado !== 'ok') continue;\n  const veredicto = debeAlertar({\n    precioActual: registro.precio_usd,\n    registros: delaVentana.filter((h) => h.ruta === registro.ruta),\n    umbral: Number(config.umbral_usd),\n    ultimaAlertaTs: ventana.ultima_alerta_ts || null,\n    ahora,\n  });\n  if (veredicto.alertar) {\n    salida.push({ json: { ...registro, motivo: veredicto.motivo, ventana } });\n  }\n}\n\nreturn salida;\n"
+      },
+      "id": "code-alertas",
+      "name": "Evaluar alertas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3020,
+        0
+      ],
+      "alwaysOutputData": true,
+      "notes": "alwaysOutputData: sin item de salida el loop se cortaria en la primera ventana."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-if-hay-alerta",
+              "leftValue": "={{ $json.ventana_id !== undefined && $json.ventana_id !== null && $json.ventana_id !== '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "if-hay-alerta",
+      "name": "Hay alerta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3240,
+        0
+      ],
+      "notes": "Evaluar alertas emite un item vacio cuando no hay nada que avisar, para que el loop pueda seguir. Este IF descarta ese item antes de llegar a Telegram."
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Leer config').first().json.telegram_chat_id }}",
+        "text": "=🚨 ALERTA DE PRECIO BAJO 🚨\n\n✈️ Ruta: {{ $json.ruta }}\n📅 Ida: {{ $json.ventana.fecha_ida }}\n📅 Vuelta: {{ $json.ventana.fecha_vuelta }}\n💰 Precio: USD {{ $json.precio_usd }} por persona\n🎯 Motivo: {{ $json.motivo }}\n📊 Fuente: {{ $json.fuente }}\n⚽ Partido: match {{ $json.ventana.match_id_city }}",
+        "additionalFields": {}
+      },
+      "id": "telegram-alerta",
+      "name": "Alerta",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3460,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_CON_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "ventanas",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "ventana_id"
+          ],
+          "value": {
+            "ventana_id": "={{ $('Ventana actual').first().json.ventana_id }}",
+            "ultima_alerta_ts": "={{ new Date().toISOString() }}"
+          },
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "sheets-marcar-alerta",
+      "name": "Marcar alerta",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        3680,
+        -100
+      ],
+      "notes": "Sin este nodo el anti-spam de 48h nunca se activa: debeAlertar lee ultima_alerta_ts. El ventana_id sale de $('Ventana actual') porque el nodo de Telegram ya reemplazo el item."
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                0
+              ],
+              "triggerAtHour": 20,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "trigger-digest",
+      "name": "Digest",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -200,
+        700
+      ],
+      "notes": "No consulta ninguna API: solo relee lo que la rama diaria ya guardo."
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_CON_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "config",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "sheets-config-raw-digest",
+      "name": "Leer config raw digest",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        0,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// La pestana config es clave/valor: una fila por parametro. Los snippets\n// esperan un unico objeto, asi que se aplana aca.\nconst config = {};\n\nfor (const item of $input.all()) {\n  if (item.json.clave) config[item.json.clave] = item.json.valor;\n}\n\nreturn [{ json: config }];"
+      },
+      "id": "code-aplanar-config-digest",
+      "name": "Leer config digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        700
+      ],
+      "notes": "Se llama \"Leer config digest\" a proposito: es el nombre que referencian los snippets."
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_CON_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "ventanas",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "activa",
+              "lookupValue": "TRUE"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "sheets-ventanas-digest",
+      "name": "Leer ventanas digest",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        400,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_CON_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "precios",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "sheets-precios-digest",
+      "name": "Leer precios digest",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        600,
+        700
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const ventanas = $('Leer ventanas digest').all().map((i) => i.json);\nconst precios = $('Leer precios digest').all().map((i) => i.json);\nconst ahora = Date.now();\nconst UNA_SEMANA = 6 * 86400000;\n\nconst lineas = ventanas.map((v) => {\n  const suyos = precios.filter((p) => p.ventana_id === v.ventana_id && p.estado === 'ok');\n  if (suyos.length === 0) return `${v.fecha_ida} → ${v.fecha_vuelta} | sin datos aun`;\n\n  const ordenados = suyos.slice().sort((a, b) => new Date(b.ts) - new Date(a.ts));\n  const actual = Number(ordenados[0].precio_usd);\n  const minimo = Math.min(...suyos.map((p) => Number(p.precio_usd)));\n\n  // El mas RECIENTE de los que ya tienen una semana. Tomar el primero del\n  // array daria el registro mas viejo de todo el historico.\n  const previo = ordenados.find((p) => ahora - new Date(p.ts).getTime() >= UNA_SEMANA);\n  const delta = previo === undefined\n    ? '—'\n    : (actual > Number(previo.precio_usd)\n      ? `+${actual - Number(previo.precio_usd)}`\n      : `${actual - Number(previo.precio_usd)}`);\n\n  const extras = String(v.partidos_extra || '').split(';').filter(Boolean).length;\n  return `${v.fecha_ida} → ${v.fecha_vuelta}\\n  USD ${actual} (min ${minimo}, sem ${delta}) | score ${v.score} | +${extras} partidos`;\n});\n\nreturn [{ json: { texto: `📊 RESUMEN SEMANAL\\n\\n${lineas.join('\\n\\n')}` } }];"
+      },
+      "id": "code-digest",
+      "name": "Armar digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Leer config digest').first().json.telegram_chat_id }}",
+        "text": "={{ $json.texto }}",
+        "additionalFields": {}
+      },
+      "id": "telegram-digest",
+      "name": "Enviar digest",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1020,
+        700
+      ]
+    }
+  ],
+  "connections": {
+    "Diario": {
+      "main": [
+        [
+          {
+            "node": "Leer config raw",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer config raw": {
+      "main": [
+        [
+          {
+            "node": "Leer config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer config": {
+      "main": [
+        [
+          {
+            "node": "Leer ventanas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer ventanas": {
+      "main": [
+        [
+          {
+            "node": "Ventana actual",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ventana actual": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Cuota disponible?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cuota disponible?": {
+      "main": [
+        [
+          {
+            "node": "SerpApi raw",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SerpApi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SerpApi raw": {
+      "main": [
+        [
+          {
+            "node": "SerpApi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SerpApi": {
+      "main": [
+        [
+          {
+            "node": "Detectar cuota agotada",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Level EZE-BCN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detectar cuota agotada": {
+      "main": [
+        [
+          {
+            "node": "Marcar cuota agotada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Marcar cuota agotada": {
+      "main": [
+        [
+          {
+            "node": "Avisar cuota",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Level EZE-BCN": {
+      "main": [
+        [
+          {
+            "node": "Level BCN-EZE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Level BCN-EZE": {
+      "main": [
+        [
+          {
+            "node": "Travelpayouts BCN-LON raw",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Travelpayouts BCN-LON raw": {
+      "main": [
+        [
+          {
+            "node": "Travelpayouts BCN-LON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Travelpayouts BCN-LON": {
+      "main": [
+        [
+          {
+            "node": "Normalizar precios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar precios": {
+      "main": [
+        [
+          {
+            "node": "Guardar precios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar precios": {
+      "main": [
+        [
+          {
+            "node": "Leer historico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer historico": {
+      "main": [
+        [
+          {
+            "node": "Evaluar alertas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluar alertas": {
+      "main": [
+        [
+          {
+            "node": "Hay alerta?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hay alerta?": {
+      "main": [
+        [
+          {
+            "node": "Alerta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ventana actual",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alerta": {
+      "main": [
+        [
+          {
+            "node": "Marcar alerta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar alerta": {
+      "main": [
+        [
+          {
+            "node": "Ventana actual",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Digest": {
+      "main": [
+        [
+          {
+            "node": "Leer config raw digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer config raw digest": {
+      "main": [
+        [
+          {
+            "node": "Leer config digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer config digest": {
+      "main": [
+        [
+          {
+            "node": "Leer ventanas digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer ventanas digest": {
+      "main": [
+        [
+          {
+            "node": "Leer precios digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer precios digest": {
+      "main": [
+        [
+          {
+            "node": "Armar digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar digest": {
+      "main": [
+        [
+          {
+            "node": "Enviar digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Argentina/Buenos_Aires",
+    "saveManualExecutions": true
+  },
+  "pinData": {}
+}

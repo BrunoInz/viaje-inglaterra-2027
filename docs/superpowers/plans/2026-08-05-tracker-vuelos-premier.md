@@ -1529,15 +1529,30 @@ git commit -m "feat: workflow 1 de sincronizacion de fixtures"
 - Consumes: la pestaña `fixtures` que puebla la Task 8; el snippet `wf2-calcular-ventanas.js`.
 - Produces: la pestaña `ventanas` poblada, con exactamente 6 filas donde `activa = TRUE`. La Task 10 la lee.
 
-- [ ] **Step 1: Construir el workflow**
+- [ ] **Step 1: Importar el workflow en n8n**
 
-1. **Schedule Trigger** — semanal, domingos 08:30, `America/Argentina/Buenos_Aires`.
-2. **Google Sheets** (`Leer config`) — pestaña `config`.
+Igual que el WF1, el JSON se genera desde el repo en vez de armarse a mano:
+
+```bash
+npm run build          # regenera snippets + los tres JSON de n8n/workflows/
+```
+
+En n8n: menú `...` → *Import from File* → `n8n/workflows/wf2-ventanas.json`. Después, en la UI: reemplazar `REEMPLAZAR_CON_GOOGLE_SHEET_ID` en los tres nodos de Google Sheets y engancharles la credencial.
+
+Nodos, en orden:
+
+1. **Schedule Trigger** (`Domingos 08:30`) — semanal, domingos 08:30, `America/Argentina/Buenos_Aires`.
+2. **Google Sheets** (`Leer config raw`) — pestaña `config`.
+2b. **Code** (`Leer config`) — aplana las filas clave/valor. Mismo patrón que el WF1: los snippets hacen `$('Leer config').first().json.umbral_usd` y la pestaña es clave/valor.
 3. **Google Sheets** (`Leer fixtures`) — pestaña `fixtures`.
-4. **Code** (`Calcular ventanas`) — pegar `n8n/code-snippets/wf2-calcular-ventanas.js`. Modo *Run Once for All Items*.
+4. **Code** (`Calcular ventanas`) — `wf2-calcular-ventanas.js`, modo *Run Once for All Items*.
 5. **Google Sheets** (`Guardar ventanas`) — *Append or Update*, columna de matcheo `ventana_id`.
 
-**Importante:** `ultima_alerta_ts` no está entre las columnas que escribe el snippet. Al usar *Append or Update* matcheando por `ventana_id`, el valor existente se conserva. Si se usara *Append* a secas, el anti-spam se reiniciaría cada domingo y las alertas se duplicarían.
+**Desviación respecto de la versión original de este plan**, encontrada al construir el JSON:
+
+`Guardar ventanas` mapea **columnas explícitas** (`Define Below`), no *Auto-Map Input Data*. El plan decía que `ultima_alerta_ts` "no está entre las columnas que escribe el snippet", pero sí está: `lib/ventanas.js` la emite como `null` y `tests/ventanas.test.js` lo verifica como parte del contrato del objeto ventana. Con automapeo, Google Sheets escribiría esa celda en blanco **todos los domingos**, borrando el anti-spam de 48 horas que el WF3 acababa de registrar — y las alertas se duplicarían sin que nada fallara a la vista. Listando a mano las otras siete columnas, la de `ultima_alerta_ts` ni se toca y el valor sobrevive. Lo cubre el test `guardar ventanas no escribe ultima_alerta_ts`.
+
+Si se usara *Append* a secas en vez de *Append or Update*, además se acumularían ventanas duplicadas cada domingo.
 
 - [ ] **Step 2: Ejecutar y verificar el conteo**
 
@@ -1559,10 +1574,13 @@ Expected: el número coincide con la columna `score`.
 Ejecutar el workflow una segunda vez.
 Expected: la cantidad de filas no cambia. No se crearon duplicados. Los `ventana_id` son los mismos.
 
-- [ ] **Step 5: Activar, exportar y commitear**
+- [ ] **Step 5: Activar y commitear**
+
+**No sobrescribir `n8n/workflows/wf2-ventanas.json` con el export de n8n**: lo genera `scripts/build-wf2.js` y `tests/wf2.test.js` verifica la sincronización. Un export traería los IDs de credenciales y el Sheet ID reales.
 
 ```bash
-git add n8n/workflows/wf2-ventanas.json
+npm test
+git add n8n/workflows/wf2-ventanas.json scripts/build-wf2.js tests/wf2.test.js
 git commit -m "feat: workflow 2 de calculo de ventanas de viaje"
 ```
 
@@ -1578,6 +1596,21 @@ git commit -m "feat: workflow 2 de calculo de ventanas de viaje"
 - Produces: la pestaña `precios` creciendo a diario, y mensajes de Telegram.
 
 Este workflow tiene **dos triggers**: el diario de precios y el dominical del digest. El digest no consulta ninguna API.
+
+Igual que los otros dos, el JSON lo genera `scripts/build-wf3.js`. Se importa con *Import from File*, se reemplaza el placeholder del Sheet ID y se enganchan las credenciales:
+
+- **Google Sheets** en los siete nodos de Sheets.
+- **Telegram** en `Alerta`, `Avisar cuota` y `Enviar digest`.
+- **Query Auth** (nombre `api_key`, valor la key de SerpApi) en `SerpApi raw`.
+- **Header Auth** (nombre `X-Access-Token`, valor el token de Travelpayouts) en `Travelpayouts BCN-LON raw`.
+- Los dos nodos de Level van **sin autenticación**: el endpoint es público.
+
+**Cuatro desviaciones respecto de la versión original de este plan**, todas por comportamiento de n8n que el plan no contemplaba. El generador las documenta en el `notes` de cada nodo y los tests las fijan:
+
+1. **`SerpApi raw` + Code `SerpApi`.** El modo degradado del Step 1b saltea el nodo de SerpApi para no gastar cuota, pero `wf3-normalizar-precios.js` hace `$('SerpApi').first()` — y en n8n **referenciar un nodo que no se ejecutó lanza error**. La rama degradada abortaba entera, que es exactamente lo contrario de degradar. El nodo HTTP pasa a llamarse `SerpApi raw` y un nodo Code llamado `SerpApi` recibe las **dos** ramas del IF, con `try/catch`, y siempre emite algo. Mismo patrón que `Leer config raw` / `Leer config`.
+2. **`Travelpayouts BCN-LON raw` + Code `Travelpayouts BCN-LON`.** El endpoint devuelve un objeto con las fechas como claves, no el array `dayPrices` de Level, y además ignora `depart_date` y responde caché de cualquier mes (verificado el 06/08). El Code lo aplana a `{ precio_usd }`, que es lo único que el snippet lee, con fallback al mínimo del caché cuando la fecha exacta no está.
+3. **`Evaluar alertas` con *Always Output Data* + IF `Hay alerta?`.** Sin items de salida la rama moría ahí y `Ventana actual` nunca recibía la señal para pasar a la siguiente: **el loop procesaba una sola ventana y terminaba en silencio**. Ahora el nodo siempre emite y el IF decide si hay algo que avisar; las dos ramas del IF vuelven al loop.
+4. **El delta semanal del digest** toma el registro más reciente de hace 6+ días, no `haceUnaSemana[0]`. La pestaña `precios` crece por *append*, así que el índice 0 era el registro más viejo de todo el histórico: al mes de trackear, la columna "sem" habría comparado contra el primer día de tracking.
 
 - [ ] **Step 1: Construir la rama diaria**
 
@@ -1714,10 +1747,13 @@ Devolver `umbral_usd` a `1150`.
 Ejecutar manualmente el trigger del digest.
 Expected: llega un solo mensaje con una entrada por cada ventana activa. **La cuota de SerpApi no se movió** — verificarlo en https://serpapi.com/dashboard.
 
-- [ ] **Step 7: Activar, exportar y commitear**
+- [ ] **Step 7: Activar y commitear**
+
+**No sobrescribir `n8n/workflows/wf3-precios.json` con el export de n8n**, por lo mismo que los otros dos.
 
 ```bash
-git add n8n/workflows/wf3-precios.json
+npm test
+git add n8n/workflows/wf3-precios.json scripts/build-wf3.js tests/wf3.test.js
 git commit -m "feat: workflow 3 de precios y alertas"
 ```
 
@@ -1725,7 +1761,7 @@ git commit -m "feat: workflow 3 de precios y alertas"
 
 ## Verificación final
 
-- [ ] `npm test` pasa completo, 60 tests.
+- [ ] `npm test` pasa completo, 121 tests.
 - [ ] `npm run build` no produce diferencias contra lo commiteado (el test de sync lo cubre).
 - [ ] Los tres workflows están activos en n8n.
 - [ ] La pestaña `precios` crece a diario sin filas con `ventana_id` o `ts` vacíos.
