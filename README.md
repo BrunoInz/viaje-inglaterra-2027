@@ -11,9 +11,23 @@ Diseño completo: `docs/superpowers/specs/2026-08-05-tracker-vuelos-premier-desi
     npm run build     # regenera los snippets y los tres workflows de n8n
     npm run deploy    # los sube a n8n (crea credenciales, workflows inactivos)
 
-`npm run deploy -- --dry-run` muestra qué haría sin escribir nada.
-`npm run deploy -- --recrear-credenciales` rota los tokens: la API pública de
-n8n no tiene update de credenciales, así que las borra y las vuelve a crear.
+Flags del deploy: `--dry-run` muestra qué haría sin escribir nada; `--activar`
+los deja activos; `--recrear-credenciales` rota los tokens (la API pública de
+n8n no tiene update de credenciales, así que las borra y las vuelve a crear).
+
+## Operación
+
+    node scripts/ejecutar.js wf1           # correr un workflow a demanda
+    node scripts/ejecutar.js wf3:diario
+    node scripts/ejecutar.js wf3:digest
+    node scripts/verificar-planilla.js     # la planilla responde y config está completa
+    node scripts/verificar-datos.js        # las pestañas cumplen lo que el spec espera
+    node scripts/set-config.js umbral_usd 1200
+
+`ejecutar.js` existe porque la API pública de n8n **no permite correr un
+workflow a mano**: despliega una copia temporal con el trigger cambiado por un
+webhook, la dispara, sigue la ejecución y la borra. Los workflows reales no se
+tocan.
 
 ## Los tres workflows
 
@@ -50,3 +64,12 @@ los secretos nunca tocan el disco del proyecto.
   en una instancia con cientos de workflows el deploy no encuentra los suyos y
   los duplica.
 - Un `PUT` sobre un workflow activo devuelve 500. Hay que desactivarlo primero.
+- Un nodo de Sheets con operación *read* corre **una vez por item de entrada**.
+  Encadenarlo detrás de una pestaña de 385 filas dispara 385 llamadas y Google
+  corta por rate limit. Se arregla con `executeOnce`.
+- El filtro del nodo de Sheets compara **contra texto**. La columna `activa` es
+  un booleano, así que `activa = TRUE` devolvía cero filas — sin error, nada.
+  Filtrar en un Code es más predecible.
+- `flylevel.com` responde **403 sin User-Agent de navegador**. El endpoint es
+  público, pero rechaza lo que parece un bot.
+- Travelpayouts **ignora `depart_date`** y responde caché de cualquier mes.

@@ -1761,10 +1761,24 @@ git commit -m "feat: workflow 3 de precios y alertas"
 
 ## Verificación final
 
-- [ ] `npm test` pasa completo, 121 tests.
-- [ ] `npm run build` no produce diferencias contra lo commiteado (el test de sync lo cubre).
-- [ ] Los tres workflows están activos en n8n.
-- [ ] La pestaña `precios` crece a diario sin filas con `ventana_id` o `ts` vacíos.
-- [ ] El consumo de SerpApi en el dashboard va a ritmo de ~6 llamadas por día, proyectando menos de 250 mensuales.
-- [ ] Ninguna alerta se disparó a partir de una fila con `estado ≠ ok`.
-- [ ] El repo no contiene ningún token ni el ID de la planilla.
+Ejecutada el 2026-08-07 contra la instancia real. Resultados:
+
+| Qué | Esperado | Obtenido |
+|---|---|---|
+| fixtures | ~380 de Premier + City en Champions | **385** (380 PL + 5 CL, todos de City) |
+| ventanas | 3 por partido, 6 activas | **48** (16 partidos × 3), **6 activas** |
+| scoring | verificable a mano | mejor **240** = 100 + 7 extras × 20 ✓ |
+| precios (1 corrida) | 6 a 12 filas | **12** (6 ok, 5 sin_inventario, 1 error_fuente) |
+| precio por persona | ~mitad del total de Google Flights | SerpApi **3112** / 2 = **1556** = lo guardado ✓ |
+| alertas con umbral 99999 | una por ventana con precio | **6 alertas** enviadas |
+| segunda corrida seguida | ninguna alerta (anti-spam 48h) | **0 alertas** ✓ |
+| digest | un mensaje, sin gastar cuota | **1 mensaje**, cuota sin moverse ✓ |
+| consumo SerpApi | ~6 por día, <250 al mes | **6 por corrida** → ~180/mes |
+
+- [x] `npm test` pasa completo, 149 tests.
+- [x] `npm run build` no produce diferencias contra lo commiteado (el test de sync lo cubre).
+- [x] Los tres workflows están activos en n8n (`slME7edRydK1k2Ii`, `V8uowjSis2teUZXb`, `4JqPZXeBgXUht47J`).
+- [x] La pestaña `precios` crece a diario sin filas con `ventana_id` o `ts` vacíos (verificado por `scripts/verificar-datos.js`).
+- [x] El consumo de SerpApi va a ritmo de 6 llamadas por corrida, proyectando ~180 mensuales.
+- [x] Ninguna alerta se disparó a partir de una fila con `estado ≠ ok`.
+- [x] El repo no contiene ningún token ni el ID de la planilla (lo verifica un test por cada workflow).

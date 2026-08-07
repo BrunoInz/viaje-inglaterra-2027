@@ -6,6 +6,7 @@
  *   node scripts/deploy.js --dry-run              # muestra que haria, sin tocar nada
  *   node scripts/deploy.js                        # crea o actualiza todo
  *   node scripts/deploy.js --recrear-credenciales # rota los tokens (borra y recrea)
+ *   node scripts/deploy.js --activar              # ademas los deja activos
  *
  * El repo guarda los JSON limpios: con el Sheet ID como placeholder y sin
  * ningun `credentials`. Este script los hidrata en memoria justo antes de
@@ -270,6 +271,7 @@ async function subir(cliente, cuerpo, existente, dryRun) {
 
 async function main() {
   const dryRun = process.argv.includes('--dry-run');
+  const activar = process.argv.includes('--activar');
   if (dryRun) console.log('MODO DRY-RUN: no se escribe nada en n8n\n');
 
   const env = leerEnv();
@@ -317,7 +319,18 @@ async function main() {
       guardarEstado(estado);
     }
 
-    console.log(`  ${accion === 'creado' ? '+' : '~'} ${workflow.name} -> ${id} (${accion}, inactivo)`);
+    // Activar es una decision aparte: por defecto quedan inactivos para poder
+    // correrlos a mano con scripts/ejecutar.js y mirar la salida antes de
+    // dejarlos sueltos contra la planilla y Telegram.
+    let situacion = 'inactivo';
+    if (activar && !dryRun) {
+      await cliente.activarWorkflow(id);
+      situacion = 'ACTIVO';
+    } else if (activar) {
+      situacion = 'se activaria';
+    }
+
+    console.log(`  ${accion === 'creado' ? '+' : '~'} ${workflow.name} -> ${id} (${accion}, ${situacion})`);
   }
 
   console.log('\nlisto.');
