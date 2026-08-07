@@ -1,11 +1,20 @@
 /**
  * Setup de la planilla del tracker (Task 7, Step 5).
  *
- * Uso:
- *   1. Crear un Google Sheet nuevo llamado `tracker-vuelos-inglaterra-2027`.
- *   2. Extensiones -> Apps Script. Pegar este archivo entero, reemplazando lo que haya.
- *   3. Ejecutar la funcion `setupPlanilla`. Aceptar los permisos que pida.
- *   4. Volver al Sheet: quedan las 4 pestanas creadas con sus encabezados.
+ * Funciona de las dos maneras:
+ *
+ *   A) Desde script.google.com (proyecto suelto). Pegar este archivo y ejecutar
+ *      `setupPlanilla`: crea la planilla desde cero y deja el ID en el log de
+ *      ejecucion (Ver -> Registro de ejecucion).
+ *
+ *   B) Desde un Sheet ya creado: Extensiones -> Apps Script, pegar y ejecutar.
+ *      Usa esa planilla.
+ *
+ * En el modo A no hay interfaz, asi que `SpreadsheetApp.getUi()` explota y el
+ * chat_id no se puede pedir por prompt: completar CHAT_ID_TELEGRAM abajo, o
+ * cargarlo despues a mano en la pestana `config`.
+ *
+ * Para reusar una planilla concreta sin abrirla, poner su ID en ID_PLANILLA.
  *
  * Es idempotente: si una pestana ya existe la reusa y reescribe la fila 1.
  * NO borra datos de las filas 2 en adelante.
@@ -14,6 +23,16 @@
  * claves de CLAVES_PRESERVADAS: una la carga Bruno a mano y la otra la escribe
  * el propio WF3. Volver a correr el setup no puede pisarlas.
  */
+
+// Dejar vacio para crear una planilla nueva (o usar la activa, si el script
+// esta vinculado a una). Completar con un ID para reusar una existente.
+var ID_PLANILLA = '';
+
+// Solo hace falta cuando el script corre sin interfaz. Si queda vacio y hay
+// UI, se pide por prompt.
+var CHAT_ID_TELEGRAM = '';
+
+var NOMBRE_PLANILLA = 'tracker-vuelos-inglaterra-2027';
 
 var ENCABEZADOS = {
   fixtures: [
@@ -52,8 +71,56 @@ var FILAS_CONFIG = [
  */
 var CLAVES_PRESERVADAS = ['telegram_chat_id', 'serpapi_agotada_mes'];
 
+/**
+ * Devuelve la interfaz, o null si el script corre suelto.
+ *
+ * En un proyecto no vinculado a un documento, getUi() lanza en vez de devolver
+ * null: sin este try/catch, el setup completo revienta al final, despues de
+ * haber creado todo.
+ */
+function interfaz() {
+  try {
+    return SpreadsheetApp.getUi();
+  } catch (error) {
+    return null;
+  }
+}
+
+function avisar(mensaje) {
+  Logger.log(mensaje);
+  var ui = interfaz();
+  if (ui) ui.alert(mensaje);
+}
+
+/**
+ * Resuelve sobre que planilla trabajar, en este orden:
+ *   1. ID_PLANILLA, si esta seteado
+ *   2. la planilla activa, si el script esta vinculado a una
+ *   3. una nueva
+ *
+ * getActiveSpreadsheet() devuelve null —no lanza— en un proyecto suelto, asi
+ * que sin este chequeo el error aparece recien al usar la variable, con un
+ * "Cannot read properties of null" que no dice nada del problema real.
+ */
+function resolverPlanilla() {
+  if (ID_PLANILLA) {
+    Logger.log('usando la planilla ' + ID_PLANILLA);
+    return SpreadsheetApp.openById(ID_PLANILLA);
+  }
+
+  var activa = SpreadsheetApp.getActiveSpreadsheet();
+  if (activa) {
+    Logger.log('usando la planilla activa: ' + activa.getName());
+    return activa;
+  }
+
+  var nueva = SpreadsheetApp.create(NOMBRE_PLANILLA);
+  Logger.log('planilla creada: ' + nueva.getUrl());
+  return nueva;
+}
+
 function setupPlanilla() {
-  var libro = SpreadsheetApp.getActiveSpreadsheet();
+  var libro = resolverPlanilla();
 
   Object.keys(ENCABEZADOS).forEach(function (nombre) {
     var hoja = libro.getSheetByName(nombre) || libro.insertSheet(nombre);
@@ -67,13 +134,36 @@ function setupPlanilla() {
   var chatId = poblarConfig(libro.getSheetByName('config'));
   eliminarHojaPorDefecto(libro);
 
-  SpreadsheetApp.getUi().alert(
+  avisar(
     'Listo. 4 pestanas creadas.\n\n' +
     (chatId
       ? 'telegram_chat_id cargado: ' + chatId
       : 'FALTA cargar telegram_chat_id en la pestana config.') +
-    '\n\nID de la planilla:\n' + libro.getId()
+    '\n\nID de la planilla:\n' + libro.getId() +
+    '\n\nURL:\n' + libro.getUrl()
   );
+
+  return libro.getId();
+}
+
+/** Pide el chat_id por prompt. Devuelve '' si el script corre sin interfaz. */
+function pedirChatId() {
+  var ui = interfaz();
+  if (!ui) {
+    Logger.log('sin interfaz: completar CHAT_ID_TELEGRAM o cargarlo a mano en config');
+    return '';
+  }
+
+  var respuesta = ui.prompt(
+    'telegram_chat_id',
+    'Pegá el chat_id del bot de Telegram (se saca de /getUpdates). '
+      + 'Dejalo vacío si lo querés cargar a mano despues.',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  return respuesta.getSelectedButton() === ui.Button.OK
+    ? respuesta.getResponseText().trim()
+    : '';
 }
 
 /** Lee la pestana config y devuelve un objeto clave -> valor. */
@@ -103,19 +193,10 @@ function poblarConfig(hoja) {
 
   var chatId = filas.filter(function (f) { return f[0] === 'telegram_chat_id'; })[0];
 
-  // Se pide una sola vez, y solo si no estaba. Asi el chat_id no vive en el
+  // Se resuelve una sola vez, y solo si no estaba. Asi el chat_id no vive en el
   // repo ni hay que acordarse de editar la celda despues.
   if (!String(chatId[1])) {
-    var respuesta = SpreadsheetApp.getUi().prompt(
-      'telegram_chat_id',
-      'Pegá el chat_id del bot de Telegram (se saca de /getUpdates). '
-        + 'Dejalo vacío si lo querés cargar a mano despues.',
-      SpreadsheetApp.getUi().ButtonSet.OK_CANCEL
-    );
-
-    if (respuesta.getSelectedButton() === SpreadsheetApp.getUi().Button.OK) {
-      chatId[1] = respuesta.getResponseText().trim();
-    }
+    chatId[1] = CHAT_ID_TELEGRAM || pedirChatId();
   }
 
   var viejas = hoja.getLastRow() - 1;
