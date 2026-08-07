@@ -46,7 +46,10 @@
       "position": [
         0,
         300
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -86,7 +89,10 @@
         300
       ],
       "alwaysOutputData": true,
-      "notes": "alwaysOutputData: en la primera corrida la pestana esta vacia y sin esto la ejecucion corta aca."
+      "notes": "alwaysOutputData: en la primera corrida la pestana esta vacia y sin esto la ejecucion corta aca.",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -313,7 +319,10 @@
       "position": [
         1760,
         200
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
     }
   ],
   "connections": {

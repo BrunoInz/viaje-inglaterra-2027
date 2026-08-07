@@ -47,7 +47,10 @@
       "position": [
         0,
         300
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -86,7 +89,10 @@
         440,
         300
       ],
-      "notes": "Nombre exacto: el snippet hace $('Leer fixtures').all()."
+      "notes": "Nombre exacto: el snippet hace $('Leer fixtures').all().",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -141,7 +147,10 @@
         880,
         300
       ],
-      "notes": "Mapeo explicito a proposito: con automapeo se escribiria ultima_alerta_ts en blanco cada domingo y el anti-spam de 48h del WF3 se reiniciaria solo."
+      "notes": "Mapeo explicito a proposito: con automapeo se escribiria ultima_alerta_ts en blanco cada domingo y el anti-spam de 48h del WF3 se reiniciaria solo.",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
     }
   ],
   "connections": {

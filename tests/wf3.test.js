@@ -107,6 +107,15 @@ test('el loop vuelve a Ventana actual por las dos ramas del IF de alerta', () =>
   assert.ok(vuelven.includes('Hay alerta?'), 'la rama sin alerta tiene que cerrar el loop');
 });
 
+test('leer historico corre una sola vez por ventana, no una por fila guardada', () => {
+  // Un nodo de Sheets read se ejecuta UNA VEZ POR ITEM de entrada. 'Guardar
+  // precios' emite una fila por fuente, asi que sin executeOnce el historico
+  // completo se releeria por cada una, dentro del loop de 6 ventanas: Google
+  // corta con "receiving too many requests" y la corrida muere a mitad de
+  // camino, con precios guardados pero sin evaluar alertas.
+  assert.strictEqual(nodo('Leer historico').executeOnce, true);
+});
+
 test('Evaluar alertas emite aunque no haya nada que alertar', () => {
   assert.strictEqual(nodo('Evaluar alertas').alwaysOutputData, true,
     'sin item de salida la rama muere y el loop nunca avanza');

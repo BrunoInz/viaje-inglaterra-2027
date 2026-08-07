@@ -30,6 +30,7 @@ const {
   nodosConfig,
   escribir,
   settings,
+  conReintentosDeSheets,
 } = require('./n8n-comun');
 
 const ARCHIVO = 'wf1-fixture-sync.json';
@@ -227,7 +228,7 @@ function construirWorkflow() {
 
   return {
     name: 'WF1 - Fixture Sync',
-    nodes: nodos,
+    nodes: conReintentosDeSheets(nodos),
     connections,
     settings: settings(),
     pinData: {},

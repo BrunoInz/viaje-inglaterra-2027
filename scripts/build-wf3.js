@@ -40,6 +40,7 @@ const {
   nodosConfig,
   escribir,
   settings,
+  conReintentosDeSheets,
 } = require('./n8n-comun');
 
 const ARCHIVO = 'wf3-precios.json';
@@ -355,6 +356,13 @@ function construirRamaDiaria() {
       typeVersion: 4.5,
       position: [2800, 0],
       alwaysOutputData: true,
+      // Un nodo de Sheets read corre UNA VEZ POR ITEM de entrada. 'Guardar
+      // precios' emite una fila por fuente, asi que sin executeOnce esta
+      // lectura se repetiria por cada una, dentro del loop de 6 ventanas, y
+      // releeria el historico completo una decena de veces por corrida. Con la
+      // pestana creciendo ~12 filas por dia, eso termina en rate limit.
+      executeOnce: true,
+      notes: 'executeOnce: sin esto se relee el historico entero una vez por fila guardada.',
     },
     nodoCode('code-alertas', 'Evaluar alertas', leerSnippet('wf3-evaluar-alertas'), [3020, 0], undefined),
     nodoIf('if-hay-alerta', 'Hay alerta?', '$json.ventana_id !== undefined && $json.ventana_id !== null && $json.ventana_id !== \'\'', [3240, 0],
@@ -487,7 +495,7 @@ function construirWorkflow() {
 
   return {
     name: 'WF3 - Precios y alertas',
-    nodes: [...diaria.nodos, ...digest.nodos],
+    nodes: conReintentosDeSheets([...diaria.nodos, ...digest.nodos]),
     connections: { ...diaria.connections, ...digest.connections },
     settings: settings(),
     pinData: {},

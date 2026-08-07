@@ -28,6 +28,7 @@ const {
   nodosConfig,
   escribir,
   settings,
+  conReintentosDeSheets,
 } = require('./n8n-comun');
 
 const ARCHIVO = 'wf2-ventanas.json';
@@ -111,7 +112,7 @@ function construirWorkflow() {
 
   return {
     name: 'WF2 - Calculo de ventanas',
-    nodes: nodos,
+    nodes: conReintentosDeSheets(nodos),
     connections,
     settings: settings(),
     pinData: {},

@@ -41,7 +41,15 @@ function nodoLectura(pestana, sheetId, credencial, posicion) {
     typeVersion: 4.5,
     position: posicion,
     alwaysOutputData: true,
+    // Un nodo de Sheets read corre UNA VEZ POR ITEM de entrada: sin esto, la
+    // lectura encadenada detras de una pestana de 385 filas dispara 385
+    // llamadas y Google corta por rate limit.
+    executeOnce: true,
     onError: 'continueRegularOutput',
+    // La API de Sheets corta ante lecturas seguidas; el limite se resetea por minuto.
+    retryOnFail: true,
+    maxTries: 5,
+    waitBetweenTries: 8000,
     credentials: {
       googleSheetsOAuth2Api: { id: credencial.id, name: credencial.name },
     },

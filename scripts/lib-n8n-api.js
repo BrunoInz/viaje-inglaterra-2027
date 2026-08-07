@@ -68,6 +68,10 @@ function crearCliente({ baseUrl, apiKey }) {
 
       return todos;
     },
+    listarEjecuciones: (workflowId, limite = 5) =>
+      pedir('GET', `/executions?workflowId=${encodeURIComponent(workflowId)}&limit=${limite}`),
+    obtenerEjecucion: (id, incluirDatos = false) =>
+      pedir('GET', `/executions/${id}${incluirDatos ? '?includeData=true' : ''}`),
     crearWorkflow: (wf) => pedir('POST', '/workflows', wf),
     actualizarWorkflow: (id, wf) => pedir('PUT', `/workflows/${id}`, wf),
     activarWorkflow: (id) => pedir('POST', `/workflows/${id}/activate`),

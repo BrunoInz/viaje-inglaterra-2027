@@ -91,6 +91,26 @@ function nodosConfig({ sufijo = '', posicionRaw, posicionAplanado }) {
   };
 }
 
+/**
+ * Agrega reintentos a todos los nodos de Google Sheets.
+ *
+ * La API de Sheets corta con "The service is receiving too many requests from
+ * you" ante lecturas o escrituras seguidas, y es un limite que se toca de
+ * verdad: el WF3 hace 9 operaciones por corrida, varias adentro de un loop de
+ * 6 ventanas. Sin reintentos, un pico de trafico deja la ejecucion a medias —
+ * con precios guardados pero sin evaluar alertas, por ejemplo.
+ *
+ * 5 intentos cada 5 segundos cubren de sobra la ventana de rate limit, que se
+ * resetea por minuto.
+ */
+function conReintentosDeSheets(nodos) {
+  return nodos.map((nodo) => (
+    nodo.type === 'n8n-nodes-base.googleSheets'
+      ? { ...nodo, retryOnFail: true, maxTries: 5, waitBetweenTries: 5000 }
+      : nodo
+  ));
+}
+
 function escribir(nombreArchivo, workflow) {
   fs.mkdirSync(DIR_SALIDA, { recursive: true });
   const destino = path.join(DIR_SALIDA, nombreArchivo);
@@ -113,6 +133,7 @@ module.exports = {
   nodoCode,
   conexion,
   nodosConfig,
+  conReintentosDeSheets,
   escribir,
   settings,
 };

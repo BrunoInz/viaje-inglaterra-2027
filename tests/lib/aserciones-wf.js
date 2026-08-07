@@ -121,6 +121,18 @@ function testsComunes({ archivo, wf, snippets = {} }) {
     }
   });
 
+  test(`${archivo}: los nodos de Google Sheets reintentan ante rate limit`, () => {
+    // La API de Sheets corta con "receiving too many requests" ante
+    // operaciones seguidas. Sin reintentos la ejecucion queda a medias: por
+    // ejemplo con los precios guardados pero sin evaluar las alertas.
+    for (const nodo of wf.nodes.filter((n) => n.type === 'n8n-nodes-base.googleSheets')) {
+      assert.strictEqual(nodo.retryOnFail, true, `${nodo.name} sin retryOnFail`);
+      assert.ok(nodo.maxTries >= 3, `${nodo.name} con pocos reintentos`);
+      assert.ok(nodo.waitBetweenTries >= 5000,
+        `${nodo.name}: el rate limit se resetea por minuto, esperar menos de 5s no ayuda`);
+    }
+  });
+
   test(`${archivo}: el Sheet ID va como placeholder, nunca el real`, () => {
     const sheets = wf.nodes.filter((n) => n.type === 'n8n-nodes-base.googleSheets');
     assert.ok(sheets.length > 0, 'se esperaba al menos un nodo de Google Sheets');

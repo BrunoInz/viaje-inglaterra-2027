@@ -43,7 +43,10 @@
       "position": [
         0,
         0
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -90,7 +93,10 @@
         400,
         0
       ],
-      "notes": "Solo las activas: son las 6 que el WF2 marca por score."
+      "notes": "Solo las activas: son las 6 que el WF2 marca por score.",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -247,7 +253,10 @@
       "position": [
         1700,
         340
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -377,7 +386,10 @@
         2580,
         0
       ],
-      "notes": "Append puro: cada corrida agrega historico nuevo, no actualiza lo anterior. La media movil de 14 dias se calcula sobre estas filas."
+      "notes": "Append puro: cada corrida agrega historico nuevo, no actualiza lo anterior. La media movil de 14 dias se calcula sobre estas filas.",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -401,7 +413,12 @@
         2800,
         0
       ],
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "notes": "executeOnce: sin esto se relee el historico entero una vez por fila guardada.",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -504,7 +521,10 @@
         3680,
         -100
       ],
-      "notes": "Sin este nodo el anti-spam de 48h nunca se activa: debeAlertar lee ultima_alerta_ts. El ventana_id sale de $('Ventana actual') porque el nodo de Telegram ya reemplazo el item."
+      "notes": "Sin este nodo el anti-spam de 48h nunca se activa: debeAlertar lee ultima_alerta_ts. El ventana_id sale de $('Ventana actual') porque el nodo de Telegram ya reemplazo el item.",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -552,7 +572,10 @@
       "position": [
         0,
         700
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -598,7 +621,10 @@
       "position": [
         400,
         700
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -622,7 +648,10 @@
         600,
         700
       ],
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
